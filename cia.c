@@ -10,8 +10,9 @@
 
 extern int clock_tick;
 
-#define dbg_print(fmt,...) printf("%10i %s: " fmt,clock_tick,cia->name,__VA_ARGS__)
+//#define dbg_print(fmt,...) printf("%10i %s: " fmt,clock_tick,cia->name,__VA_ARGS__)
 
+#define dbg_print(fmt,...)
 void cia_reg_write(cia_t* cia,uint16_t addr, uint8_t value) {
 
   switch(addr) {
@@ -150,7 +151,7 @@ int cia_clock_timer(cia_timer_t *t) {
 int cia_clock(cia_t* cia) {
   int irq = 0;
   if( cia_clock_timer(&cia->t[0] )){
-   //dbg_print("TimerA underflow latch %i\n",cia->t[0].latch);
+   dbg_print("TimerA underflow latch %i\n",cia->t[0].latch);
 
     cia->IRQ |= 1;
     if(cia->IRQ_MASK & 1) {

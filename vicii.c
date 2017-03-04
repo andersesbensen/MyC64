@@ -40,6 +40,16 @@ uint8_t vic_regs[47];
 
 #define mode (vic_regs[CTRL1] & 0x60) |  (vic_regs[CTRL2] & 0x10)
 
+
+
+#define VICII_PAL_NORMAL_FIRST_DISPLAYED_LINE        0x10   /* 16 */
+#define VICII_PAL_NORMAL_LAST_DISPLAYED_LINE         0x11f  /* 287 */
+#define VICII_PAL_FULL_FIRST_DISPLAYED_LINE          0x08   /* 8 */
+#define VICII_PAL_FULL_LAST_DISPLAYED_LINE           0x12c  /* 300 */
+#define VICII_PAL_DEBUG_FIRST_DISPLAYED_LINE         0x00   /* 0 */
+#define VICII_PAL_DEBUG_LAST_DISPLAYED_LINE          0x137  /* 311 */
+
+
 /*
 RSEL|  Display window height   | First line  | Last line
 ----+--------------------------+-------------+----------
@@ -109,30 +119,34 @@ extern void write6502(uint16_t address, uint8_t value);*/
 uint16_t vm_ptr; //Videomatrix pointer
 uint16_t c_ptr; //Character generator
 uint16_t b_ptr; //Bitmap generator
+#define SWAP_UINT32(val) \
+ ( (((val) >> 24) & 0x000000FF) | (((val) >>  8) & 0x0000FF00) | \
+ (  ((val) <<  8) & 0x00FF0000) | (((val) << 24) & 0xFF000000) )
 
 
 
 const uint32_t rgb_palette[16] = {
-    0x000000FF,
-    0xFFFFFFFF,
-    0x68372BFF,
-    0x70A4B2FF,
-    0x6F3D86FF,
-    0x588D43FF,
-    0x352879FF,
-    0xB8C76FFF,
-    0x6F4F25FF,
-    0x433900FF,
-    0x9A6759FF,
-    0x444444FF,
-    0x6C6C6CFF,
-    0x9AD284FF,
-    0x6C5EB5FF,
-    0x959595FF,
+    SWAP_UINT32(0x000000FF),
+    SWAP_UINT32(0xFFFFFFFF),
+    SWAP_UINT32(0x68372BFF),
+    SWAP_UINT32(0x70A4B2FF),
+    SWAP_UINT32(0x6F3D86FF),
+    SWAP_UINT32(0x588D43FF),
+    SWAP_UINT32(0x352879FF),
+    SWAP_UINT32(0xB8C76FFF),
+    SWAP_UINT32(0x6F4F25FF),
+    SWAP_UINT32(0x433900FF),
+    SWAP_UINT32(0x9A6759FF),
+    SWAP_UINT32(0x444444FF),
+    SWAP_UINT32(0x6C6C6CFF),
+    SWAP_UINT32(0x9AD284FF),
+    SWAP_UINT32(0x6C5EB5FF),
+    SWAP_UINT32(0x959595FF),
 };
 
 void vic_init() {
   memset(vic_regs,0,sizeof(vic_regs));
+  RASTER_Y = 200;
 };
 
 void vic_reg_write(uint16_t address, uint8_t value) {
@@ -168,7 +182,6 @@ uint8_t vic_reg_read(uint16_t address) {
   printf("VIC reg read %4.4x line %i\n",address,RASTER_Y);
   switch(address){
   case CTRL1:
-    printf (" raster %x\n",RASTER_Y);
     return (vic_regs[address] & ~0x80) | ((RASTER_Y & 0x100) >> 1);
   case RASTER:
     return RASTER_Y & 0xFF;
@@ -205,13 +218,13 @@ int vic_clock() {
     pixels = vic_ram_read(c_ptr + c*8 + (Y & 7)  );
     for(int j =0;j < 8; j++) {
       color = ( pixels & (1<<(7-j))  ) ? bit_color : vic_regs[BG_COLOR0] & 0xF;
-      pixelbuf[Y][8*X+j] =htonl(rgb_palette[color]);
+      pixelbuf[Y][8*X+j] =rgb_palette[color];
     }
   } else {
     //outside screen area
     color = vic_regs[BO_COLOR] & 0xF;
     for(int j =0;j < 8; j++) {
-      pixelbuf[Y][X*8+j] =htonl(rgb_palette[color]);
+      pixelbuf[Y][X*8+j] =rgb_palette[color];
     }
   }
 
@@ -225,9 +238,11 @@ int vic_clock() {
     /*Check for raster irq*/
 
     if(RST == RASTER_Y) {
+      //printf("VIC Raster watch %i %i\n",RST,vic_regs[IRQ_EN]);
       vic_regs[IRQ] |= 0x01;
       if(vic_regs[IRQ_EN] & 1) {
         vic_regs[IRQ] |= 0x80;
+        printf("VIC IRQ\n");
         irq6502();
       }
     }

@@ -8,7 +8,7 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTORCC ON)
-
+set(CMAKE_C_FLAGS "-O3")
 
 find_package(Qt5Widgets)
 find_package(Qt5OpenGL)

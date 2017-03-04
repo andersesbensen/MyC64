@@ -85,19 +85,9 @@ read6502(uint16_t address)
 
   if (address == 0x1)
   {
-    printf("PORT read %x\n", ram[1] | (1 << 4) );
+    //printf("PORT read %x\n", ram[1] | (1 << 4) );
     return ram[1] | (1 << 4);
   }
-
-  if (address == 0xe544)
-  {
-    printf("ClearScreen\n");
-  }
-  if ((address & 0xFFF0) == 0xFFF0)
-  {
-    printf("IRQ at %x\n", address);
-  }
-
   switch (dev)
   {
   case RAM:
@@ -128,7 +118,7 @@ read6502(uint16_t address)
 
       //CIA 1
       int x = cia_reg_read(&cia1, address & 0xF);
-      printf("Read  CIA1 %4.4x %2.2x\n", address, x);
+      //printf("Read  CIA1 %4.4x %2.2x\n", address, x);
 
       return x;
     }
@@ -136,20 +126,8 @@ read6502(uint16_t address)
     {
       //CIA 2
       int x = cia_reg_read(&cia2, address & 0xF);
-      printf("Read  CIA2 %4.4x %2.2x\n", address, x);
+      //printf("Read  CIA2 %4.4x %2.2x\n", address, x);
       return x;
-    }
-    else if (address < 0xdf00)
-    {
-      //IO 1
-      printf("Read IO1\n");
-
-    }
-    else if (address < 0xdd00)
-    {
-      //IO 2
-      printf("Read IO2\n");
-
     }
     return 0;
   case KERNALROM:
@@ -215,25 +193,15 @@ write6502(uint16_t address, uint8_t value)
     {
       cia_reg_write(&cia1, address & 0xF, value);
 
-      printf("Write CIA1 %4.4x %2.2x\n", address, value);
+      //printf("Write CIA1 %4.4x %2.2x\n", address, value);
       //CIA 1
     }
     else if (address < 0xde00)
     {
       cia_reg_write(&cia2, address & 0xF, value);
 
-      printf("Write CIA2 %4.4x %2.2x\n", address, value);
+      //printf("Write CIA2 %4.4x %2.2x\n", address, value);
       //CIA 2
-    }
-    else if (address < 0xdf00)
-    {
-      printf("Write IO1\n");
-      //IO 1
-    }
-    else if (address < 0xdd00)
-    {
-      printf("Write IO2\n");
-      //IO 2
     }
     return;
   }
@@ -336,7 +304,7 @@ c65_run_frame()
     {
       if (cia1.IRQ & 0x80)
       {
-        //irq6502();
+        irq6502();
       }
       cpu_halt_clocks = step6502();
     }
@@ -362,13 +330,13 @@ c65_run_frame()
 //    cia2.PRA |= 0x90;
 
 
-    if( cia1.PRA & 0x4) {
+   /* if( cia1.PRA & 0x4) {
       cia1.PRB = ~cia1.PRA & ~2;
     } else {
       cia1.PRB = ~cia1.PRA;
-    }
-
-    cia2.PRA |= (CIA2_A_CLK | CIA2_A_DATA);
+    }*/
+    cia1.PRB = 0xFF;
+    cia2.PRA |= (CIA2_A_CLK_OUT | CIA2_A_DATA);
 
 
 
