@@ -11,6 +11,8 @@
 #include "cia.h"
 #include "sys/time.h"
 #include "c64.h"
+#include "tape.h"
+
 #include <unistd.h>
 #include <string.h>
 
@@ -34,8 +36,8 @@ uint8_t ram[0x10000];
 
 cia_t cia1;
 cia_t cia2;
-char key_pressed_row;
-char key_pressed_col;
+uint8_t key_pressed_row =0;
+uint8_t key_pressed_col =0;
 
 typedef enum
 {
@@ -52,6 +54,21 @@ mem_dev_t area_map[8][3] =
     { RAM, IO, RAM },
     { RAM, IO, KERNALROM },
     { BASICROM, IO, KERNALROM } };
+
+void c64_load_prg(const char* file) {
+  FILE*f;
+  uint16_t offset;
+
+  f = fopen(file,"rb");
+  fseek(f, 0L, SEEK_END);
+  size_t sz = ftell(f);
+  fseek(f, 0L, SEEK_SET);
+  fread(&offset,2,1,f);
+
+  printf("Program file size is %i\n",sz);
+  fread(&ram[offset],sz-2,1,f);
+  fclose(f);
+}
 
 mem_dev_t
 addr_to_dev(uint16_t address)
@@ -86,7 +103,7 @@ read6502(uint16_t address)
   if (address == 0x1)
   {
     //printf("PORT read %x\n", ram[1] | (1 << 4) );
-    return ram[1] | (1 << 4);
+    return ram[1] |PROT_CASETTE_SENSE;
   }
   switch (dev)
   {
@@ -100,7 +117,7 @@ read6502(uint16_t address)
     if (address < 0xD400)
     {
       int value = vic_reg_read(address & 0x3f);
-      printf("Read VIC %4.4x %2.2x\n", address, value);
+//      printf("Read VIC %4.4x %2.2x\n", address, value);
 
       return value;
     }
@@ -252,39 +269,24 @@ c64_init()
   clock_tick = 0;
 }
 
+uint64_t key_matrix;
+
+uint8_t key_matrix2[8];
 void
-c64_key_press(char key, int state)
+c64_key_press(int key, int state)
 {
-  static int n=0;
-  if(key == 4) {
-    key = 0xD; //Return
-  }
-  if (state)
-  {
-    printf("%i: Key press %i\n",n++, key);
+  if(key < 64) {
+    if(state) {
+      key_matrix2[key /8] |= (1<<(key & 7));
 
-    key_pressed_row = 1 << (key & 0xF);
-    key_pressed_col = 1 << ((key & 0xF0) >> 8);
-
-    if(key == 0) {
-      nmi6502();
+      key_matrix |= (1UL <<key);
     } else {
-      ram[0xc6]++;
-      ram[0x277]=key;
+      key_matrix &= ~(1UL <<key);
+
+      key_matrix2[key / 8] &= ~(1<<(key & 7));
+
     }
   }
-  else
-  {
-    key_pressed_row = 0;
-    key_pressed_col = 0;
-  }
-
-  /*cia1.regs_s.PRA =0xFF;
-   cia1.regs_s.PRB =0xFF;
-   cia2.regs_s.PRA =0xFF;
-   cia2.regs_s.PRB =0xFF;*/
-
-//  nmi6502();
 }
 
 extern uint32_t clockticks6502;
@@ -312,10 +314,7 @@ c65_run_frame()
 
     cpu_halt_clocks += vic_clock();
 
-    if (cia_clock(&cia1))
-    {
-    }
-
+    cia_clock(&cia1);
     if (cia_clock(&cia2))
     {
       nmi6502();
@@ -327,20 +326,36 @@ c65_run_frame()
 #define CIA2_A_DATA_OUT (1<<5)
 #define CIA2_A_CLK_OUT  (1<<4)
 #define CIA2_A_ATN_OUT  (1<<3)
-//    cia2.PRA |= 0x90;
+//    cia2.PRA |= (CIA2_A_CLK_OUT | CIA2_A_DATA);
 
+#if 0
+    uint64_t rows;
+    rows =0;
+    if(!(cia1.PRA & 0x01)) rows |= 0x00000000000000FFUL;
+    if(!(cia1.PRA & 0x02)) rows |= 0x000000000000FF00UL;
+    if(!(cia1.PRA & 0x04)) rows |= 0x0000000000FF0000UL;
+    if(!(cia1.PRA & 0x08)) rows |= 0x00000000FF000000UL;
+    if(!(cia1.PRA & 0x10)) rows |= 0x000000FF00000000UL;
+    if(!(cia1.PRA & 0x20)) rows |= 0x0000FF0000000000UL;
+    if(!(cia1.PRA & 0x40)) rows |= 0x00FF000000000000UL;
+    if(!(cia1.PRA & 0x80)) rows |= 0xFF00000000000000UL;
 
-   /* if( cia1.PRA & 0x4) {
-      cia1.PRB = ~cia1.PRA & ~2;
-    } else {
-      cia1.PRB = ~cia1.PRA;
-    }*/
-    cia1.PRB = 0xFF;
-    cia2.PRA |= (CIA2_A_CLK_OUT | CIA2_A_DATA);
+    rows &= key_matrix;
 
+    rows |= rows >> 32;
+    rows |= rows >> 16;
+    rows |= rows >> 8;
 
-
-    //cia1.PRB = cia1.PRA; //cia1.PRA & key_pressed_row ? ~key_pressed_col : 0xFF;
+    cia1.PRB = 0xFF & ~(rows & 0xFF);  //cia1.PRA; //cia1.PRA & key_pressed_row ? ~key_pressed_col : 0xFF;
+#else
+    uint8_t key=0x0;
+    for(int i=0; i < 8; i++) {
+      if( (cia1.PRA & (1<<i)) == 0) {
+        key |= key_matrix2[i];
+      }
+    }
+    cia1.PRB = 0xFF & ~key;
+#endif
   }
 
   gettimeofday(&time2, 0);

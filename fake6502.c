@@ -776,6 +776,7 @@ nop()
 {
   switch (opcode)
   {
+  case 0xea:
   case 0x1C:
   case 0x3C:
   case 0x5C:

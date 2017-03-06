@@ -38,6 +38,7 @@ uint8_t vic_regs[47];
 #define CSEL     (vic_regs[CTRL2] & 0x08)
 #define XSCROLL  (vic_regs[CTRL2] & 0x7)
 
+
 #define mode (vic_regs[CTRL1] & 0x60) |  (vic_regs[CTRL2] & 0x10)
 
 
@@ -85,6 +86,11 @@ int visible_pixels = 403;
 
 int RST; //Raster watch
 int RASTER_Y;
+int X =0; //X coordinate
+
+int SPRITE_X[8];
+int SPRITE_Y[8];
+
 
 extern uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 
@@ -116,7 +122,7 @@ extern void write6502(uint16_t address, uint8_t value);*/
 
 
 
-uint16_t vm_ptr; //Videomatrix pointer
+uint16_t VM; //Videomatrix pointer
 uint16_t c_ptr; //Character generator
 uint16_t b_ptr; //Bitmap generator
 #define SWAP_UINT32(val) \
@@ -155,9 +161,27 @@ void vic_reg_write(uint16_t address, uint8_t value) {
       printf("VIC reg write %4.4x = %4.4x\n",address,value);
   }
 
+
+  if(address<16) {
+    if(address & 1) {
+      SPRITE_Y[address>>1] = value;
+    } else {
+      SPRITE_X[address>>1] &= ~0xFF;
+      SPRITE_X[address>>1] |= value;
+    }
+    return;
+ }
   switch(address) {
+  case 0x16:
+    for(int i=0; i < 8; i++) {
+      SPRITE_X[i] &=~0x100;
+      if(value & (1<<i)) {
+        SPRITE_X[i] |= 0x100;
+      }
+    }
+    break;
   case 0x18:
-    vm_ptr = (value & 0xF0) << (10-4) ; //1K block
+    VM = (value & 0xF0) << (10-4) ; //1K block
     c_ptr = (value & 0xE) <<  (11-1);  //2K block
     b_ptr = (value & 0xE) <<  (13-1);  //8K block
     break;
@@ -179,8 +203,20 @@ void vic_reg_write(uint16_t address, uint8_t value) {
 
 
 uint8_t vic_reg_read(uint16_t address) {
-  printf("VIC reg read %4.4x line %i\n",address,RASTER_Y);
+  //printf("VIC reg read %4.4x line %i\n",address,RASTER_Y);
+  if(address<16) {
+    return address & 1 ? SPRITE_Y[address>>1] & 0xFF : SPRITE_X[address>>1] & 0xFF;
+  }
+
   switch(address){
+  case 16: //MSB of sprite X
+  {
+    int r =0;
+    for(int i=0; i < 8; i++) {
+      if(SPRITE_X[i] & 0x80) r|=(1<<i);
+    }
+    return r;
+  }
   case CTRL1:
     return (vic_regs[address] & ~0x80) | ((RASTER_Y & 0x100) >> 1);
   case RASTER:
@@ -194,32 +230,129 @@ uint8_t vic_reg_read(uint16_t address) {
 
 uint32_t pixelbuf[403][512];
 
+
+
 int vic_clock() {
-  static int X =0;
   int Y = RASTER_Y;
   uint8_t color;
-  uint8_t pixels; //8 pixels to be drawin in this cycle
+  uint8_t g_data; //8 pixels to be drawin in this cycle
   int stun_cycles = 0;
 
   if ( (X>=5) && (X < 45)  &&
       (Y >= first_line) && (Y < (screen_height+ first_line)) && DEN)
   {
+    int RC = Y&7;
+
     //Read Character
     int cx = X - 5 ;
     int cy = (Y-first_line) / 8;
-    uint8_t c = vic_ram_read(vm_ptr + cy*40 + cx);
-    uint8_t bit_color = color_ram[cy*40 + cx];
+    int VC = cy*40 + cx;
+
+    //This is c-data bits
+    uint8_t D = vic_ram_read(VM | VC); //8 bits
+    uint8_t bit_color = color_ram[VC]; //4bits
 
     //If this a "bad line"
-    if(X==0 && ( (Y&7) == 0)) {
+    if(X==0 && ( RC == 0)) {
       stun_cycles = 40;
     }
-    //Read Pixel
-    pixels = vic_ram_read(c_ptr + c*8 + (Y & 7)  );
-    for(int j =0;j < 8; j++) {
-      color = ( pixels & (1<<(7-j))  ) ? bit_color : vic_regs[BG_COLOR0] & 0xF;
-      pixelbuf[Y][8*X+j] =rgb_palette[color];
+    if(BMM ) //Standard bitmap mode (ECM/BMM/MCM=0/1/0)
+    {
+      //Read Pixel
+      g_data = vic_ram_read((c_ptr & 0x2000) + (VC<<3) |RC  );
+
+      int color1 = (D >> 4) &0xF;
+      int color0 = (D >> 0) &0xF;
+
+      if(MCM) {
+        for(int j =0;j < 4; j++) {
+          switch(g_data & (3 << (2*j))) {
+          case 0:
+            color = vic_regs[BG_COLOR0]; break;
+          case 1:
+            color = color1; break;
+          case 2:
+            color = color0; break;
+          case 3:
+            color = bit_color & 0xF; break;
+          }
+          pixelbuf[Y][8*X+2*j] = rgb_palette[color];
+          pixelbuf[Y][8*X+2*j+1] =rgb_palette[color];
+        }
+      } else {
+        for(int j =0;j < 8; j++) {
+          color = ( g_data & (1<<(7-j))  ) ? color1 : color0;
+          pixelbuf[Y][8*X+j] =rgb_palette[color];
+        }
+      }
+    } else { //Text mode
+
+      //Read Pixel
+      g_data = vic_ram_read(c_ptr + (D<<3) + RC  );
+      if (MCM && (bit_color & 0x80))
+      { //3.7.3.2. Multicolor text mode (ECM/BMM/MCM=0/0/1)
+        for (int j = 0; j < 4; j++)
+        {
+          switch (g_data & (3 << 2 * (3-j)))
+          {
+          case 0:
+            color = vic_regs[BG_COLOR0];
+            break;
+          case 1:
+            color = vic_regs[BG_COLOR1];
+            break;
+          case 2:
+            color = vic_regs[BG_COLOR2];
+            break;
+          case 3:
+            color = bit_color & 3;
+            break;
+          }
+
+          pixelbuf[Y][8 * X + 2 * j] = rgb_palette[color];
+          pixelbuf[Y][8 * X + 2 * j + 1] = rgb_palette[color];
+        }
+      } else {
+        for(int j =0;j < 8; j++) {
+          color = ( g_data & (1<<(7-j))  ) ? bit_color : vic_regs[BG_COLOR0] & 0xF;
+          pixelbuf[Y][8*X+j] =rgb_palette[color];
+        }
+      }
     }
+    if(ECM) {
+      //printf("ECM text\n");
+    }
+
+
+    /*Draw sprites */
+    for(int i = 0; i < 8; i++) {
+      if(vic_regs[SPR_EN] & (1<<i)) {
+      /*
+       * The 63 bytes of sprite data necessary for displaying 24�21 pixels are
+       * stored in memory in a linear fashion: 3 adjacent bytes form one line of the
+       * sprite.
+       */
+
+
+        int spry = RASTER_Y - SPRITE_Y[i];
+        if( spry>=0 && spry < 21) {
+          int sprx = cx*8-SPRITE_X[i];
+          if(sprx >= 0 && sprx < 24) {
+            uint8_t MP = vic_ram_read(VM | 0x3f8 | i); //8 bits
+            int MC = sprx / 8 + spry*3;
+            uint8_t pixel = vic_ram_read( (MP << 6) | MC);
+            uint8_t color =vic_regs[0x27 + i];
+
+            for(int j =0;j < 8; j++) {
+              if(pixel & (1<< (7-j))) {
+                pixelbuf[Y][X*8+j] = rgb_palette[color];
+              }
+            }
+          }
+        }
+      }
+    }
+
   } else {
     //outside screen area
     color = vic_regs[BO_COLOR] & 0xF;
@@ -228,14 +361,14 @@ int vic_clock() {
     }
   }
 
+
+
   X++;
 
 
   if(X > 63) {
     X =0;
 
-    RASTER_Y++;
-    /*Check for raster irq*/
 
     if(RST == RASTER_Y) {
       //printf("VIC Raster watch %i %i\n",RST,vic_regs[IRQ_EN]);
@@ -247,7 +380,11 @@ int vic_clock() {
       }
     }
 
+    RASTER_Y++;
+    /*Check for raster irq*/
+
     if(RASTER_Y == number_of_lines) {
+      vic_screen_draw_done();
       RASTER_Y = 0;
     }
   }

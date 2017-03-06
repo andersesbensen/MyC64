@@ -13,6 +13,6 @@ set(CMAKE_C_FLAGS "-O3")
 find_package(Qt5Widgets)
 find_package(Qt5OpenGL)
 
-add_executable(myc64 fake6502.c basic.c  chargen.c  fake6502.c  kernal.c c64.c vicii.c cia.c main.cpp)
+add_executable(myc64 fake6502.c basic.c  chargen.c  fake6502.c  kernal.c c64.c vicii.c cia.c main.cpp keyboard.cpp tape.c)
 
 target_link_libraries(myc64 Qt5::Core Qt5::OpenGL Qt5::Widgets)
