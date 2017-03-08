@@ -15,7 +15,7 @@
 
 #include <unistd.h>
 #include <string.h>
-
+ #include <sys/stat.h>
 extern unsigned char kernal_bin[];
 extern unsigned char basic_bin[];
 extern unsigned char chargen_bin[];
@@ -63,9 +63,10 @@ void c64_load_prg(const char* file) {
   fseek(f, 0L, SEEK_END);
   size_t sz = ftell(f);
   fseek(f, 0L, SEEK_SET);
+
   fread(&offset,2,1,f);
 
-  printf("Program file size is %i\n",sz);
+  printf("Program file size is %zU\n",sz);
   fread(&ram[offset],sz-2,1,f);
   fclose(f);
 }
