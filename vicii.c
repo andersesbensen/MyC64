@@ -256,28 +256,34 @@ vic_clock()
 {
   int Y = RASTER_Y;
   uint8_t color;
-  uint8_t g_data; //8 pixels to be drawin in this cycle
+  uint8_t g_data; //8 pixels to be draw in in this cycle
   int stun_cycles = 0;
+  int color0;
+  int color1;
+  int color2;
+  int color3;
 
   if( vic_regs[IRQ] & 0x80) {
     irq6502();
   }
 
+  int yy = Y - first_line;
+  int RC = (yy) & 7;
 
-  if ((X >= 16) && (X < 56) && (Y >= (first_line)) && (Y < (screen_height + (first_line))) && DEN)
+
+  if ((X >= 16) && (X < 56) && (yy >= 0) &&  (yy < screen_height ) && DEN)
   {
-    int RC = (Y- first_line) & 7;
 
     //Read Character
     int cx = X - 16;
-    int cy = (Y - first_line) / 8;
+    int cy = (yy) >>3;
+    if(cy >= 25) cy= 0;
     int VC = cy * 40 + cx;
-
 
     //If this a "bad line"
     if (cx == 0 && (RC == 0))
     {
-      stun_cycles += 42;
+      //stun_cycles += 42;
       for(int j = 0; j < 40; j++) {
         video_ram[j] = (color_ram[VC + j] << 8 ) | vic_ram_read(VM | VC + j);
       }
@@ -292,83 +298,76 @@ vic_clock()
       //Read Pixel
       g_data = vic_ram_read((c_ptr & 0x2000) | (VC << 3) | RC);
 
-      int color1 = (D >> 4) & 0xF;
-      int color0 = (D >> 0) & 0xF;
 
       if (MCM && (ECM==0))
       {
-        for (int j = 0; j < 8; j += 2)
-        {
-          switch ((g_data >> j) & 3)
-          {
-          case 0:
-            color = vic_regs[BG_COLOR0];
-            break;
-          case 1:
-            color = color1;
-            break;
-          case 2:
-            color = color0;
-            break;
-          case 3:
-            color = bit_color & 0xF;
-            break;
-          }
-          pixelbuf[Y][8 * X + 6 - j] = rgb_palette[color];
-          pixelbuf[Y][8 * X + 6 - j + 1] = rgb_palette[color];
-        }
+        color0 = vic_regs[BG_COLOR0];
+        color1 = (D >> 4) & 0xF;
+        color2 = (D >> 0) & 0xF;
+        color3 = bit_color & 0xF;
       }
       else if(ECM==0)
       {
-        for (int j = 0; j < 8; j++)
-        {
-          color = (g_data & (1 << (7 - j))) ? color1 : color0;
-          pixelbuf[Y][8 * X + j] =rgb_palette[color];
-        }
+        color1 = (D >> 4) & 0xF;
+        color0 = (D >> 0) & 0xF;
+      } else {
+        color0 = 0;
+        color1 = 0;
       }
     }
     else
     { //Text mode
-      //Read Pixel
+      //Read Pixels
       g_data = vic_ram_read(c_ptr | (D << 3) | RC);
       if (MCM && (bit_color & 0x8))
       { //3.7.3.2. Multicolor text mode (ECM/BMM/MCM=0/0/1)
-        for (int j = 0; j < 8; j += 2)
-        {
-          switch ((g_data >> j) & 3)
-          {
-          case 0:
-            color = vic_regs[BG_COLOR0];
-            break;
-          case 1:
-            color = vic_regs[BG_COLOR1];
-            break;
-          case 2:
-            color = vic_regs[BG_COLOR2];
-            break;
-          case 3:
-            color = bit_color & 7;
-            break;
-          }
-
-          pixelbuf[Y][8 * X + 6 - j] = rgb_palette[color];
-          pixelbuf[Y][8 * X + 6 - j + 1] =rgb_palette[color];
-        }
+       color0 = vic_regs[BG_COLOR0];
+       color1 = vic_regs[BG_COLOR1];
+       color2 = vic_regs[BG_COLOR2];
+       color3 = bit_color & 7;
       }
       else
       {
+        color1 = bit_color;
         if(ECM) {
-          D &= 0x3F;
-        }
-
-        int bg_color = ECM ? (D>>6) & 3 : vic_regs[BG_COLOR0];
-        for (int j = 0; j < 8; j++)
-        {
-          color = (g_data << j) & 0x80  ? bit_color : bg_color;
-          pixelbuf[Y][8 * X + j] = rgb_palette[color];
+          color0 =  (D>>6) & 3 ;
+        } else {
+          color0 =  vic_regs[BG_COLOR0];
         }
       }
     }
+
+    if(MCM) {
+        for (int j = 0; j < 8; j += 2)
+       {
+         switch ((g_data >> (6-j)) & 3)
+         {
+         case 0:
+           color = color0;
+           break;
+         case 1:
+           color = color1;
+           break;
+         case 2:
+           color = color2;
+           break;
+         case 3:
+           color = color3;
+           break;
+         }
+
+         pixelbuf[Y][8 * X + j] = rgb_palette[color];
+         pixelbuf[Y][8 * X + j + 1] =rgb_palette[color];
+       }
+    } else {
+      for (int j = 0; j < 8; j++)
+      {
+        color = (g_data << j) & 0x80  ? color1 : color0;
+        pixelbuf[Y][8 * X + j] = rgb_palette[color];
+      }
+    }
+
+
 
     /*Draw sprites */
     for (int i = 0; i < 8; i++)
