@@ -109,7 +109,8 @@ int visible_pixels = 403;
 int RST; //Raster watch
 int RASTER_Y;
 int X = 0; //X coordinate
-
+static int VCC= 0;
+static int VCBASE= 0;
 
 int SPRITE_X[8];
 int SPRITE_Y[8];
@@ -150,16 +151,29 @@ uint16_t b_ptr; //Bitmap generator
  (  ((val) <<  8) & 0x00FF0000) | (((val) << 24) & 0xFF000000) )
 
 const uint32_t rgb_palette[16] =
-  { SWAP_UINT32(0x000000FF), SWAP_UINT32(0xFFFFFFFF), SWAP_UINT32(0x68372BFF), SWAP_UINT32(0x70A4B2FF), SWAP_UINT32(
-      0x6F3D86FF), SWAP_UINT32(0x588D43FF), SWAP_UINT32(0x352879FF), SWAP_UINT32(0xB8C76FFF), SWAP_UINT32(0x6F4F25FF),
-      SWAP_UINT32(0x433900FF), SWAP_UINT32(0x9A6759FF), SWAP_UINT32(0x444444FF), SWAP_UINT32(0x6C6C6CFF), SWAP_UINT32(
-          0x9AD284FF), SWAP_UINT32(0x6C5EB5FF), SWAP_UINT32(0x959595FF), };
+  {
+      SWAP_UINT32(0x000000FFUL),
+      SWAP_UINT32(0xFFFFFFFFUL),
+      SWAP_UINT32(0x68372BFFUL),
+      SWAP_UINT32(0x70A4B2FFUL),
+      SWAP_UINT32(0x6F3D86FFUL),
+      SWAP_UINT32(0x588D43FFUL),
+      SWAP_UINT32(0x352879FFUL),
+      SWAP_UINT32(0xB8C76FFFUL),
+      SWAP_UINT32(0x6F4F25FFUL),
+      SWAP_UINT32(0x433900FFUL),
+      SWAP_UINT32(0x9A6759FFUL),
+      SWAP_UINT32(0x444444FFUL),
+      SWAP_UINT32(0x6C6C6CFFUL),
+      SWAP_UINT32( 0x9AD284FFUL),
+      SWAP_UINT32(0x6C5EB5FFUL),
+      SWAP_UINT32(0x959595FFUL), };
 
 void
 vic_init()
 {
   memset(vic_regs, 0, sizeof(vic_regs));
-  RASTER_Y = 200;
+  RASTER_Y = 0;
 }
 ;
 
@@ -258,37 +272,32 @@ vic_clock()
   uint8_t color;
   uint8_t g_data; //8 pixels to be draw in in this cycle
   int stun_cycles = 0;
-  int color0;
-  int color1;
-  int color2;
-  int color3;
+  int color0=0;
+  int color1=0;
+  int color2=0;
+  int color3=0;
 
   if( vic_regs[IRQ] & 0x80) {
     irq6502();
   }
 
   int yy = Y - first_line;
-  int RC = (yy) & 7;
+  unsigned int RC = (yy+YSCROLL) & 7;
 
+  if((X==11) && (RC == 0)) {
+
+    //If this a "bad line"
+    stun_cycles += 42;
+    for(int j = 0; j < 40; j++) {
+      video_ram[j] = (color_ram[VCBASE + j] << 8 ) | vic_ram_read(VM | VCBASE + j);
+    }
+  }
 
   if ((X >= 16) && (X < 56) && (yy >= 0) &&  (yy < screen_height ) && DEN)
   {
 
     //Read Character
     int cx = X - 16;
-    int cy = (yy) >>3;
-    if(cy >= 25) cy= 0;
-    int VC = cy * 40 + cx;
-
-    //If this a "bad line"
-    if (cx == 0 && (RC == 0))
-    {
-      //stun_cycles += 42;
-      for(int j = 0; j < 40; j++) {
-        video_ram[j] = (color_ram[VC + j] << 8 ) | vic_ram_read(VM | VC + j);
-      }
-    }
-
 
     //This is c-data bits
     uint8_t D =  video_ram[cx] & 0xFF; //8 bits
@@ -296,7 +305,7 @@ vic_clock()
     if (BMM) //Standard bitmap mode (ECM/BMM/MCM=0/1/0)
     {
       //Read Pixel
-      g_data = vic_ram_read((c_ptr & 0x2000) | (VC << 3) | RC);
+      g_data = vic_ram_read((c_ptr & 0x2000) | (VCC << 3) | RC);
 
 
       if (MCM && (ECM==0))
@@ -368,7 +377,6 @@ vic_clock()
     }
 
 
-
     /*Draw sprites */
     for (int i = 0; i < 8; i++)
     {
@@ -438,6 +446,9 @@ vic_clock()
       }
     }
 
+    //Increment video matrix counter
+    VCC++;
+
   }
   else if ((X >= 11) && (X < 61))
   {
@@ -457,10 +468,15 @@ vic_clock()
   }
 
   X++;
-
   if (X > 63)
   {
     X = 0;
+
+    if(RC==7) {
+      VCBASE = VCC;
+    } else {
+      VCC = VCBASE;
+    }
 
     /*Check for raster irq*/
 
@@ -480,6 +496,8 @@ vic_clock()
     {
       vic_screen_draw_done();
       RASTER_Y = 0;
+      VCC=0;
+      VCBASE =0;
     }
   }
 
