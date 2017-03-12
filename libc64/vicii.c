@@ -109,8 +109,8 @@ int visible_pixels = 403;
 int RST; //Raster watch
 int RASTER_Y;
 int X = 0; //X coordinate
-static int VCC= 0;
-static int VCBASE= 0;
+static int VCC = 0;
+static int VCBASE = 0;
 
 int SPRITE_X[8];
 int SPRITE_Y[8];
@@ -151,29 +151,35 @@ uint16_t b_ptr; //Bitmap generator
  (  ((val) <<  8) & 0x00FF0000) | (((val) << 24) & 0xFF000000) )
 
 const uint32_t rgb_palette[16] =
-  {
-      SWAP_UINT32(0x000000FFUL),
-      SWAP_UINT32(0xFFFFFFFFUL),
-      SWAP_UINT32(0x68372BFFUL),
-      SWAP_UINT32(0x70A4B2FFUL),
-      SWAP_UINT32(0x6F3D86FFUL),
-      SWAP_UINT32(0x588D43FFUL),
-      SWAP_UINT32(0x352879FFUL),
-      SWAP_UINT32(0xB8C76FFFUL),
-      SWAP_UINT32(0x6F4F25FFUL),
-      SWAP_UINT32(0x433900FFUL),
-      SWAP_UINT32(0x9A6759FFUL),
-      SWAP_UINT32(0x444444FFUL),
-      SWAP_UINT32(0x6C6C6CFFUL),
-      SWAP_UINT32( 0x9AD284FFUL),
-      SWAP_UINT32(0x6C5EB5FFUL),
-      SWAP_UINT32(0x959595FFUL), };
+  { SWAP_UINT32(0x000000FFUL), SWAP_UINT32(0xFFFFFFFFUL), SWAP_UINT32(0x68372BFFUL), SWAP_UINT32(0x70A4B2FFUL),
+      SWAP_UINT32(0x6F3D86FFUL), SWAP_UINT32(0x588D43FFUL), SWAP_UINT32(0x352879FFUL), SWAP_UINT32(0xB8C76FFFUL),
+      SWAP_UINT32(0x6F4F25FFUL), SWAP_UINT32(0x433900FFUL), SWAP_UINT32(0x9A6759FFUL), SWAP_UINT32(0x444444FFUL),
+      SWAP_UINT32(0x6C6C6CFFUL), SWAP_UINT32(0x9AD284FFUL), SWAP_UINT32(0x6C5EB5FFUL), SWAP_UINT32(0x959595FFUL), };
+
+#ifdef __arm__
+
+#define VSYNC
+#define HSYNC
+#define EMIT_PIXEL(x)
+
+#else
+uint32_t pixelbuf[403][512];
+uint32_t* pixelbuf_p;
+#define VSYNC
+#define HSYNC pixelbuf_p=pixelbuf[RASTER_Y]
+#define EMIT_PIXEL(x) *pixelbuf_p++ = rgb_palette[x]
+#endif
 
 void
 vic_init()
 {
-  memset(vic_regs, 0, sizeof(vic_regs));
+  for (int i = 0; i < sizeof(vic_regs); i++)
+  {
+    vic_regs[i] = 0;
+  }
   RASTER_Y = 0;
+  VSYNC;
+  HSYNC;
 }
 ;
 
@@ -181,10 +187,10 @@ void
 vic_reg_write(uint16_t address, uint8_t value)
 {
 
-  if (value != vic_regs[address])
-  {
-    printf("VIC reg write %4.4x = %4.4x\n", address, value);
-  }
+  /*if (value != vic_regs[address])
+   {
+   printf("VIC reg write %4.4x = %4.4x\n", address, value);
+   }*/
 
   if (address < 16)
   {
@@ -212,8 +218,8 @@ vic_reg_write(uint16_t address, uint8_t value)
     }
     break;
   case 0x18:
-    VM = ((value>>4) & 0xF) << 10; //1K block
-    c_ptr = ((value>>1) & 0x7) << 11; //2K block
+    VM = ((value >> 4) & 0xF) << 10; //1K block
+    c_ptr = ((value >> 1) & 0x7) << 11; //2K block
     break;
   case CTRL1:
     RST &= ~0x100;
@@ -263,8 +269,6 @@ vic_reg_read(uint16_t address)
   }
 }
 
-uint32_t pixelbuf[403][512];
-
 int
 vic_clock()
 {
@@ -272,54 +276,58 @@ vic_clock()
   uint8_t color;
   uint8_t g_data; //8 pixels to be draw in in this cycle
   int stun_cycles = 0;
-  int color0=0;
-  int color1=0;
-  int color2=0;
-  int color3=0;
+  int color0 = 0;
+  int color1 = 0;
+  int color2 = 0;
+  int color3 = 0;
 
-  if( vic_regs[IRQ] & 0x80) {
+  if (vic_regs[IRQ] & 0x80)
+  {
     irq6502();
   }
 
   int yy = Y - first_line;
-  unsigned int RC = (yy+YSCROLL) & 7;
+  unsigned int RC = (yy + YSCROLL) & 7;
 
-  if((X==11) && (RC == 0)) {
+  if ((X == 11) && (RC == 0))
+  {
 
     //If this a "bad line"
     stun_cycles += 42;
-    for(int j = 0; j < 40; j++) {
-      video_ram[j] = (color_ram[VCBASE + j] << 8 ) | vic_ram_read(VM | VCBASE + j);
+    for (int j = 0; j < 40; j++)
+    {
+      video_ram[j] = (color_ram[VCBASE + j] << 8) | vic_ram_read(VM | VCBASE + j);
     }
   }
 
-  if ((X >= 16) && (X < 56) && (yy >= 0) &&  (yy < screen_height ) && DEN)
+  if ((X >= 16) && (X < 56) && (yy >= 0) && (yy < screen_height) && DEN)
   {
 
     //Read Character
     int cx = X - 16;
 
     //This is c-data bits
-    uint8_t D =  video_ram[cx] & 0xFF; //8 bits
-    uint8_t bit_color = (video_ram[cx]>>8) & 0xF ; //4bits
+    uint8_t D = video_ram[cx] & 0xFF; //8 bits
+    uint8_t bit_color = (video_ram[cx] >> 8) & 0xF; //4bits
     if (BMM) //Standard bitmap mode (ECM/BMM/MCM=0/1/0)
     {
       //Read Pixel
       g_data = vic_ram_read((c_ptr & 0x2000) | (VCC << 3) | RC);
 
-
-      if (MCM && (ECM==0))
+      if (MCM && (ECM == 0))
       {
         color0 = vic_regs[BG_COLOR0];
         color1 = (D >> 4) & 0xF;
         color2 = (D >> 0) & 0xF;
         color3 = bit_color & 0xF;
       }
-      else if(ECM==0)
+      else if (ECM == 0)
       {
         color1 = (D >> 4) & 0xF;
         color0 = (D >> 0) & 0xF;
-      } else {
+      }
+      else
+      {
         color0 = 0;
         color1 = 0;
       }
@@ -330,53 +338,59 @@ vic_clock()
       g_data = vic_ram_read(c_ptr | (D << 3) | RC);
       if (MCM && (bit_color & 0x8))
       { //3.7.3.2. Multicolor text mode (ECM/BMM/MCM=0/0/1)
-       color0 = vic_regs[BG_COLOR0];
-       color1 = vic_regs[BG_COLOR1];
-       color2 = vic_regs[BG_COLOR2];
-       color3 = bit_color & 7;
+        color0 = vic_regs[BG_COLOR0];
+        color1 = vic_regs[BG_COLOR1];
+        color2 = vic_regs[BG_COLOR2];
+        color3 = bit_color & 7;
       }
       else
       {
         color1 = bit_color;
-        if(ECM) {
-          color0 =  (D>>6) & 3 ;
-        } else {
-          color0 =  vic_regs[BG_COLOR0];
+        if (ECM)
+        {
+          color0 = (D >> 6) & 3;
+        }
+        else
+        {
+          color0 = vic_regs[BG_COLOR0];
         }
       }
     }
 
-    if(MCM) {
-        for (int j = 0; j < 8; j += 2)
-       {
-         switch ((g_data >> (6-j)) & 3)
-         {
-         case 0:
-           color = color0;
-           break;
-         case 1:
-           color = color1;
-           break;
-         case 2:
-           color = color2;
-           break;
-         case 3:
-           color = color3;
-           break;
-         }
+    if (MCM)
+    {
+      for (int j = 0; j < 8; j += 2)
+      {
+        switch ((g_data >> (6 - j)) & 3)
+        {
+        case 0:
+          color = color0;
+          break;
+        case 1:
+          color = color1;
+          break;
+        case 2:
+          color = color2;
+          break;
+        case 3:
+          color = color3;
+          break;
+        }
 
-         pixelbuf[Y][8 * X + j] = rgb_palette[color];
-         pixelbuf[Y][8 * X + j + 1] =rgb_palette[color];
-       }
-    } else {
+        EMIT_PIXEL(color);
+        EMIT_PIXEL(color);
+      }
+    }
+    else
+    {
       for (int j = 0; j < 8; j++)
       {
-        color = (g_data << j) & 0x80  ? color1 : color0;
-        pixelbuf[Y][8 * X + j] = rgb_palette[color];
+        color = (g_data << j) & 0x80 ? color1 : color0;
+        EMIT_PIXEL(color);
       }
     }
 
-
+#ifndef __arm__
     /*Draw sprites */
     for (int i = 0; i < 8; i++)
     {
@@ -394,8 +408,9 @@ vic_clock()
           int sprx = cx * 8 - SPRITE_X[i];
           if (sprx >= 0 && sprx < 24)
           {
-            if(sprx ==0 && spry==0) {
-              stun_cycles+=1; //Penalty for reading MP
+            if (sprx == 0 && spry == 0)
+            {
+              stun_cycles += 1; //Penalty for reading MP
             }
 
             uint8_t MP = vic_ram_read(VM | 0x3f8 | i); //8 bits
@@ -445,6 +460,7 @@ vic_clock()
         }
       }
     }
+#endif
 
     //Increment video matrix counter
     VCC++;
@@ -456,14 +472,14 @@ vic_clock()
     color = vic_regs[BO_COLOR] & 0xF;
     for (int j = 0; j < 8; j++)
     {
-      pixelbuf[Y][X * 8 + j] = rgb_palette[color];
+      EMIT_PIXEL(color);
     }
   }
   else
   {
     for (int j = 0; j < 8; j++)
     {
-      pixelbuf[Y][X * 8 + j] = 0;
+      EMIT_PIXEL(0);
     }
   }
 
@@ -471,10 +487,12 @@ vic_clock()
   if (X > 63)
   {
     X = 0;
-
-    if(RC==7) {
+    if (RC == 7)
+    {
       VCBASE = VCC;
-    } else {
+    }
+    else
+    {
       VCC = VCBASE;
     }
 
@@ -491,13 +509,15 @@ vic_clock()
     }
 
     RASTER_Y++;
+    HSYNC;
 
     if (RASTER_Y == number_of_lines)
     {
       vic_screen_draw_done();
       RASTER_Y = 0;
-      VCC=0;
-      VCBASE =0;
+      VCC = 0;
+      VCBASE = 0;
+      VSYNC;
     }
   }
 

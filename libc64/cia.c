@@ -6,7 +6,7 @@
  */
 #include "cia.h"
 #include "fake6502.h"
-#include<stdio.h>
+//#include<stdio.h>
 
 extern int clock_tick;
 
@@ -104,7 +104,7 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
   case 0xA:
   case 0xB:
   case 0xC:
-    printf("Implement me\n");
+    //printf("Implement me\n");
     return 0; //TODO
   case 0xD: //Interrupt status
   {

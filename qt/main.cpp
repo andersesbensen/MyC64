@@ -87,14 +87,6 @@ class Window : public QMainWindow
 
   protected:
   void keyPressEvent(QKeyEvent *event) {
-    if(event->key()==Qt::Key_Tab) {
-      pix_buf_lock.lock();
-      c64_load_prg("International Karate + (1987)(System 3)[cr Triad][t +1 Triad].prg");
-      //c64_load_prg("/Users/aes/git/MyC64/dawnfall.prg");
-      pix_buf_lock.unlock();
-
-    }
-
     c64_key_press( key_matrix(event->key()),1);
   }
   void keyReleaseEvent(QKeyEvent *event) {

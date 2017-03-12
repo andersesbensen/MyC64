@@ -1,5 +1,4 @@
 
-project(MyC64)
 
 set (CMAKE_PREFIX_PATH /opt/local/libexec/qt5)
 # Find includes in corresponding build directories

@@ -102,7 +102,6 @@
  *                                                   *
  *****************************************************/
 
-#include <stdio.h>
 #include <stdint.h>
 
 //6502 defines
@@ -786,7 +785,8 @@ nop()
     penaltyop = 1;
     break;
   default:
-    printf("Unknown op %x\n", opcode);
+    //printf("Unknown op %x\n", opcode);
+    break;
   }
 }
 
@@ -1264,7 +1264,7 @@ static void
     void
     hookexternal(void *funcptr)
     {
-      if (funcptr != (void *) NULL)
+      if (funcptr != (void *) 0)
       {
         loopexternal = funcptr;
         callexternal = 1;
