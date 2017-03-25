@@ -41,7 +41,7 @@ MEMORY
 {
     FLASH (rx) : ORIGIN = 0x00000000, LENGTH = 0x00040000
     SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00008000
-    //SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00010000
+    /*SRAM (rwx) : ORIGIN = 0x20000000, LENGTH = 0x00010000*/
 }
 
 SECTIONS
@@ -77,3 +77,5 @@ SECTIONS
     
 	/DISCARD/   : { *(.ARM.exidx* .gnu.linkonce.armexidx.*) }    
 }
+
+ENTRY(ResetISR)

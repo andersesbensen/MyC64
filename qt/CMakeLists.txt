@@ -15,3 +15,4 @@ find_package(Qt5OpenGL)
 add_executable(myc64 main.cpp keyboard.cpp )
 
 target_link_libraries(myc64 c64 Qt5::Core Qt5::OpenGL Qt5::Widgets)
+

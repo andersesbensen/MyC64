@@ -18,18 +18,12 @@
 #include <sys/stat.h>
 
 #define dbg_printf(a,...)
-extern unsigned char kernal_bin[];
-extern unsigned char basic_bin[];
-extern unsigned char chargen_bin[];
+extern const unsigned char kernal_bin[];
+extern const unsigned char basic_bin[];
+extern const unsigned char chargen_bin[];
 
 uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 
-#ifdef __arm__
-#define NUM_4K_BLOCKS 7
-#else
-#define NUM_4K_BLOCKS 16
-#endif
-uint8_t ram[NUM_4K_BLOCKS*4096];
 
 /**
  * MOS 6510 PORT bits
@@ -48,18 +42,16 @@ uint8_t ram[NUM_4K_BLOCKS*4096];
 #define CIA2_A_CLK_OUT  (1<<4)
 #define CIA2_A_ATN_OUT  (1<<3)
 
-
-cia_t cia1;
-cia_t cia2;
-uint8_t key_pressed_row =0;
-uint8_t key_pressed_col =0;
+ALL_STATIC cia_t cia1;
+ALL_STATIC cia_t cia2;
+ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 
 typedef enum
 {
   RAM, BASICROM, IO, KERNALROM, CHARROM
 } mem_dev_t;
 
-mem_dev_t area_map[8][3] =
+const mem_dev_t area_map[8][3] =
   {
     { RAM, RAM, RAM },
     { RAM, CHARROM, RAM },
@@ -88,20 +80,19 @@ void c64_load_prg(const char* file) {
 }
 #endif
 
-mem_dev_t
+
+static inline mem_dev_t
 addr_to_dev(uint16_t address)
 {
   int bank = (ram[1] & 7);
   if (address >= 0xA000 && address < 0xC000)
   {
     return area_map[bank][0];
-  }
-  if ((address >= 0xD000) && (address < 0xE000))
+  }else if ((address & 0xF000)== 0xD000)
   {
     //dbg_printf("IO area %i %i\n",bank,area_map[bank][1]);
     return area_map[bank][1];
-  }
-  if (address >= 0xE000)
+  } else if (address >= 0xE000)
   {
     return area_map[bank][2];
   }
@@ -111,7 +102,7 @@ addr_to_dev(uint16_t address)
   }
 }
 
-uint8_t
+ALL_STATIC uint8_t
 read6502(uint16_t address)
 {
   mem_dev_t dev = addr_to_dev(address);
@@ -128,7 +119,7 @@ read6502(uint16_t address)
   case RAM:
     // dbg_printf("Read RAM %4.4x %2.2x\n",address, ram[address]);
 
-    return ram[address];
+    return ram[address & ADDR_MASK ];
   case BASICROM:
     return basic_bin[address - 0xA000];
   case IO:
@@ -176,7 +167,7 @@ read6502(uint16_t address)
   return 0;
 }
 
-void
+ALL_STATIC void
 write6502(uint16_t address, uint8_t value)
 {
   mem_dev_t dev = addr_to_dev(address);
@@ -199,7 +190,7 @@ write6502(uint16_t address, uint8_t value)
   case CHARROM:
   case RAM:
 
-    if((address >> 12) > NUM_4K_BLOCKS) {
+    if(address & ~(ADDR_MASK)) {
       return;
     }
     ram[address] = value;
@@ -241,31 +232,6 @@ write6502(uint16_t address, uint8_t value)
   }
 }
 
-uint8_t
-vic_ram_read(uint16_t address)
-{
-  uint8_t bank;
-  uint16_t addr14 = address & 0x3FFF;
-
-  bank = (~cia2.PRA) & 3;
-  /*
-   * The VIC has only 14 address lines, so it can only address 16KB of memory.
-   * It can access the complete 64KB main memory all the same because the 2
-   * missing address bits are provided by one of the CIA I/O chips (they are the
-   * inverted bits 0 and 1 of port A of CIA 2). With that you can select one of
-   * 4 16KB banks for the VIC at a time.
-   */
-  // dbg_printf("bank %i\n",bank);
-  if (((bank & 1) == 0) && (addr14 >= 0x1000) && (addr14 < 0x2000))
-  {
-    return chargen_bin[address & 0xFFF];
-  }
-  else
-  {
-    return ram[(bank << 14) | (addr14)];
-  }
-}
-
 int clock_tick;
 
 void
@@ -285,8 +251,6 @@ c64_init()
   clock_tick = 0;
 }
 
-uint64_t key_matrix;
-
 uint8_t key_matrix2[8];
 void
 c64_key_press(int key, int state)
@@ -294,18 +258,13 @@ c64_key_press(int key, int state)
   if(key < 64) {
     if(state) {
       key_matrix2[key /8] |= (1<<(key & 7));
-
-      key_matrix |= (1UL <<key);
     } else {
-      key_matrix &= ~(1UL <<key);
-
       key_matrix2[key / 8] &= ~(1<<(key & 7));
 
     }
   }
 }
 
-extern uint32_t clockticks6502;
 void
 c65_run_frame()
 {
@@ -338,16 +297,14 @@ c65_run_frame()
     {
       nmi6502();
     }
-
-
+/*
     uint8_t key=0x0;
     for(int i=0; i < 8; i++) {
       if( (cia1.PRA & (1<<i)) == 0) {
         key |= key_matrix2[i];
       }
     }
-    cia1.PRB = 0xFF & ~key;
-
+    cia1.PRB = 0xFF & ~key;*/
   }
 
 #ifndef __arm__

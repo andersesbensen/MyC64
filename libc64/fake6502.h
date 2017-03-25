@@ -8,6 +8,12 @@
 #ifndef TESTAPPLICATIONS_MYC64_FAKE6502_H_
 #define TESTAPPLICATIONS_MYC64_FAKE6502_H_
 #include <stdint.h>
+
+
+#ifndef ALL_STATIC
+#define ALL_STATIC
+#endif
+
 /**
  *    - Call this once before you begin execution.    *
  *
@@ -48,11 +54,6 @@ void nmi6502() ;
  */
  void hookexternal(void *funcptr) ;
 
- /*
-  *  *   - A running total of the emulated cycle count.  *
-  *
-  */
- extern uint32_t clockticks6502;
 
  /*
   *  *   - A running total of the total emulated         *
@@ -60,13 +61,13 @@ void nmi6502() ;
  *     clock cycle timing.                           *
  *
  */
- extern int32_t instructions;
+ extern uint32_t instructions;
 
 /**
  * Fake6502 requires you to provide two external     *
  * functions:                                        *
  */
-extern uint8_t read6502(uint16_t address);
-extern void write6502(uint16_t address, uint8_t value);
+ALL_STATIC uint8_t read6502(uint16_t address);
+ALL_STATIC void write6502(uint16_t address, uint8_t value);
 
 #endif /* TESTAPPLICATIONS_MYC64_FAKE6502_H_ */

@@ -8,6 +8,10 @@
 #ifndef TESTAPPLICATIONS_MYC64_CIA_H_
 #define TESTAPPLICATIONS_MYC64_CIA_H_
 
+#ifndef ALL_STATIC
+#define ALL_STATIC
+#endif
+
 #include <stdint.h>
 typedef struct {
   uint16_t value;
@@ -59,8 +63,13 @@ void cia_reg_write(cia_t* cia ,uint16_t addr, uint8_t value);
 uint8_t cia_reg_read(cia_t* cia, uint16_t addr);
 
 /**
- * Return true if edge interrupt occured.
+ * Return true if edge interrupt occurred.
  */
 int cia_clock(cia_t* cia);
+
+
+ALL_STATIC cia_t cia1;
+ALL_STATIC cia_t cia2;
+
 
 #endif /* TESTAPPLICATIONS_MYC64_CIA_H_ */

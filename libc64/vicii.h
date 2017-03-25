@@ -19,11 +19,6 @@ uint8_t vic_reg_read(uint16_t address);
  */
 int vic_clock();
 
-/**
- * Read a 14 bit address
- */
-extern uint8_t vic_ram_read(uint16_t address);
-
 
 
 #endif /* TESTAPPLICATIONS_MYC64_VICII_H_ */

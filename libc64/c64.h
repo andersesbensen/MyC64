@@ -8,7 +8,22 @@
 #ifndef TESTAPPLICATIONS_MYC64_C64_H_
 #define TESTAPPLICATIONS_MYC64_C64_H_
 
+
+#ifndef ALL_STATIC
+#define ALL_STATIC
+#endif
+
 #include<stdint.h>
+
+
+//#ifdef __arm__
+#define NUM_4K_BLOCKS 6
+//#else
+//#define NUM_4K_BLOCKS 16
+//
+//#endif
+#define ADDR_MASK (NUM_4K_BLOCKS*4096-1)
+
 
 void c64_init();
 void c65_run_frame();

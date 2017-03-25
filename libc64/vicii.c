@@ -6,7 +6,10 @@
  */
 #include "vicii.h"
 #include <stdio.h>
-#include <fake6502.h>
+#include "fake6502.h"
+#include "cia.h"
+#include "c64.h"
+
 uint8_t vic_regs[47];
 
 #define MSBsX  0x10
@@ -49,30 +52,46 @@ uint8_t vic_regs[47];
 #define VICII_PAL_FULL_LAST_DISPLAYED_LINE           0x12c  /* 300 */
 #define VICII_PAL_DEBUG_FIRST_DISPLAYED_LINE         0x00   /* 0 */
 #define VICII_PAL_DEBUG_LAST_DISPLAYED_LINE          0x137  /* 311 */
-
 /**
- * Cycl-# 6                   1 1 1 1 1 1 1 1 1 1 2 2 2 2 2 2 2 2 2 2 3 3 3 3 3 3 3 3 3 3 4 4 4 4 4 4 4 4 4 4 5 5 5 5 5 5 5 5 5 5 6 6 6 6
- 3 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 1
- _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
- �0 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
- __
- IRQ   ________________________________________________________________________________________________________________________________
- ________________________                                                                                      ____________________
- BA                         ______________________________________________________________________________________
- _ _ _ _ _ _ _ _ _ _ _ _ _ _ _                                                                                 _ _ _ _ _ _ _ _ _ _
- AEC _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _________________________________________________________________________________ _ _ _ _ _ _ _ _ _
-
- VIC i 3 i 4 i 5 i 6 i 7 i r r r r rcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcgcg i i 0 i 1 i 2 i 3
- 6510  x x x x x x x x x x x x X X X                                                                                 x x x x x x x x x x
-
- Graph.                      |===========01020304050607080910111213141516171819202122232425262728293031323334353637383940=========
-
- X coo. \\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
-       1111111111111111111111111110000000000000000000000000000000000000000000000000000000000000000111111111111111111111111111111111111111
- 89999aaaabbbbccccddddeeeeff0000111122223333444455556666777788889999aaaabbbbccccddddeeeeffff000011112222333344445555666677778888999
- c048c048c048c048c048c048c04048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048c048
+ *
+ *
+ *
+Number — name Y Pb (rel.) Pr (rel.) Number — name Y Pb (rel.) Pr (rel.)
+0 — black     0 0 0                     8 — orange       0.375 −0.707  0.707
+1 — white     1 0 0                     9 — brown        0.25  −0.924  0.383
+2 — red     0.313 −0.383  0.924        10 — light red    0.5 −0.383  0.924
+3 — cyan    0.625 0.383 −0.924         11 — dark grey    0.313 0 0
+4 — purple  0.375 0.707 0.707          12 — grey         0.469 0 0
+5 — green   0.5 −0.707  −0.707         13 — light green  0.75  −0.707  −0.707
+6 — blue    0.25  1 0                  14 — light blue   0.469 1 0
+7 — yellow  0.75  −1  0                15 — light grey   0.625 0 0
  *
  */
+/*
+ * luma values
+0:0
+1:0.313
+2:0.375
+3:0.5
+4:0.625
+5:0.25
+6:0.75
+7:1
+*/
+/*const uint8_t luma_table[] = {
+    0<<3,7<<3,1<<3,4<<3,2<<3,3<<3,5<<3,6<<3,
+    2<<3,5<<3,3<<3,1<<3,3<<3,6<<3,3<<3,4<<3
+};*/
+
+/*
+ * array([ 0.   ,  3.   ,  0.939,  1.875,  1.125,  1.5  ,  0.75 ,  2.25 ,
+        1.125,  0.75 ,  1.5  ,  0.939,  1.407,  2.25 ,  1.407,  1.875])
+ */
+const uint8_t luma_table[] = {
+    0,  24,   8,  16,   8,  16,   8,  16,   8,   8,  16,
+             8,   8,  16,   8,  16
+};
+
 /*
  RSEL|  Display window height   | First line  | Last line
  ----+--------------------------+-------------+----------
@@ -84,39 +103,29 @@ uint8_t vic_regs[47];
  0 | 38 characters/304 pixels |   31 ($1f)   |  334 ($14e)
  1 | 40 characters/320 pixels |   24 ($18)   |  343 ($157)
  */
-typedef struct
-{
-  int first_line; //First line of screen
-  int last_line;
 
-  int first_x;
-  int last_x;
+const int screen_width = 320;
+const int screen_height = 200;
+const int cycles_per_line = 63;
+const int number_of_lines = 312;
+const int first_line = 48;
+const int visible_pixels = 403;
 
-  int screen_x;
-  int screen_y;
-
-  int n_lines; //Total number of line signal
-  int n_visible_lines; //Numner of visible linex in signal
-} vic_t;
-
-int screen_width = 320;
-int screen_height = 200;
-int cycles_per_line = 63;
-int number_of_lines = 312;
-int first_line = 48;
-int visible_pixels = 403;
-
-int RST; //Raster watch
-int RASTER_Y;
-int X = 0; //X coordinate
+static int RST; //Raster watch
+static int RASTER_Y;
+static int X ; //X coordinate
 static int VCC = 0;
 static int VCBASE = 0;
+static uint16_t VM; //Videomatrix pointer
+static uint16_t c_ptr; //Character generator
+static int16_t video_ram[40];
 
-int SPRITE_X[8];
-int SPRITE_Y[8];
-int video_ram[40];
+static int SPRITE_X[8];
+static int SPRITE_Y[8];
 
 extern uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
+extern uint8_t ram[NUM_4K_BLOCKS*4096];
+extern const unsigned char chargen_bin[];
 
 /*extern uint8_t read6502(uint16_t address);
  extern void write6502(uint16_t address, uint8_t value);*/
@@ -138,45 +147,95 @@ extern uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
  E  119.53125 +34.0081334493            0
  F  159.375     0                       0
 
-
-
-
  */
 
-uint16_t VM; //Videomatrix pointer
-uint16_t c_ptr; //Character generator
-uint16_t b_ptr; //Bitmap generator
+
 #define SWAP_UINT32(val) \
  ( (((val) >> 24) & 0x000000FF) | (((val) >>  8) & 0x0000FF00) | \
  (  ((val) <<  8) & 0x00FF0000) | (((val) << 24) & 0xFF000000) )
 
 const uint32_t rgb_palette[16] =
-  { SWAP_UINT32(0x000000FFUL), SWAP_UINT32(0xFFFFFFFFUL), SWAP_UINT32(0x68372BFFUL), SWAP_UINT32(0x70A4B2FFUL),
-      SWAP_UINT32(0x6F3D86FFUL), SWAP_UINT32(0x588D43FFUL), SWAP_UINT32(0x352879FFUL), SWAP_UINT32(0xB8C76FFFUL),
-      SWAP_UINT32(0x6F4F25FFUL), SWAP_UINT32(0x433900FFUL), SWAP_UINT32(0x9A6759FFUL), SWAP_UINT32(0x444444FFUL),
-      SWAP_UINT32(0x6C6C6CFFUL), SWAP_UINT32(0x9AD284FFUL), SWAP_UINT32(0x6C5EB5FFUL), SWAP_UINT32(0x959595FFUL), };
+  { SWAP_UINT32(0x000000FFUL),   //black
+      SWAP_UINT32(0xFFFFFFFFUL), //white
+      SWAP_UINT32(0x68372BFFUL), //red
+      SWAP_UINT32(0x70A4B2FFUL), //cyan
+      SWAP_UINT32(0x6F3D86FFUL), //purple
+      SWAP_UINT32(0x588D43FFUL), //green
+      SWAP_UINT32(0x352879FFUL), //blue
+      SWAP_UINT32(0xB8C76FFFUL), //yellow
+      SWAP_UINT32(0x6F4F25FFUL), //orange
+      SWAP_UINT32(0x433900FFUL), //brown
+      SWAP_UINT32(0x9A6759FFUL), //light red
+      SWAP_UINT32(0x444444FFUL), //drak gray
+      SWAP_UINT32(0x6C6C6CFFUL), //grey
+      SWAP_UINT32(0x9AD284FFUL), //light green
+      SWAP_UINT32(0x6C5EB5FFUL), //light blue
+      SWAP_UINT32(0x959595FFUL), //light gray
+  };
 
 #ifdef __arm__
-
+extern void arm_sync(int level);
+extern void arm_emit_pixel(int luma,int color);
+extern uint32_t* luma_buffer;
+extern uint32_t* luma_bufferA;
+int luma_count=0;
 #define VSYNC
 #define HSYNC
-#define EMIT_PIXEL(x)
-
+void inline EMIT_PIXEL4(int x) {
+     luma_count++;
+    if(luma_count == (32/4))   luma_buffer= luma_bufferA;
+    *luma_buffer++ = luma_table[x];
+  }
+#define pixelbuf_p luma_buffer
+#define SYNC(x)
 #else
 uint32_t pixelbuf[403][512];
 uint32_t* pixelbuf_p;
 #define VSYNC
 #define HSYNC pixelbuf_p=pixelbuf[RASTER_Y]
 #define EMIT_PIXEL(x) *pixelbuf_p++ = rgb_palette[x]
+#define SYNC(x)
 #endif
+
+/**
+ * Read a 14 bit address
+ */
+static uint8_t
+vic_ram_read(uint16_t address)
+{
+  uint8_t bank;
+  uint16_t addr14 = address; // & 0x3FFF;
+
+  bank = (~cia2.PRA) & 3;
+  /*
+   * The VIC has only 14 address lines, so it can only address 16KB of memory.
+   * It can access the complete 64KB main memory all the same because the 2
+   * missing address bits are provided by one of the CIA I/O chips (they are the
+   * inverted bits 0 and 1 of port A of CIA 2). With that you can select one of
+   * 4 16KB banks for the VIC at a time.
+   */
+  // dbg_printf("bank %i\n",bank);
+  //if (((bank & 1) == 0) && (addr14 >= 0x1000) && (addr14 < 0x2000))
+  if (((bank & 1) == 0) && ((addr14 &0xf000) == 0x1000) )
+  {
+    return chargen_bin[address & 0xFFF];
+  }
+  else
+  {
+    int final_addr = (bank << 14) | (addr14);
+
+    return ram[final_addr & ADDR_MASK];
+  }
+}
 
 void
 vic_init()
 {
-  for (int i = 0; i < sizeof(vic_regs); i++)
+  /*for (int i = 0; i < sizeof(vic_regs); i++)
   {
     vic_regs[i] = 0;
-  }
+  }*/
+  memset(vic_regs,0, sizeof(vic_regs));
   RASTER_Y = 0;
   VSYNC;
   HSYNC;
@@ -237,6 +296,102 @@ vic_reg_write(uint16_t address, uint8_t value)
   vic_regs[address] = value;
 }
 
+
+inline void emit4_pixels(uint8_t pixel_data, uint8_t color0, uint8_t color1) {
+  uint32_t pixels=0;
+  uint8_t color;
+
+  for (int j = 0; j < 4; j++)
+  {
+    color = (pixel_data >> 1) & 0x1 ? color1 : color0;
+    pixels |= luma_table[color];
+    pixels <<= 8;
+  }
+
+  EMIT_PIXEL4(pixels);
+}
+
+
+inline void emit4_mcpixels(uint8_t pixel_data, uint8_t color0, uint8_t color1,uint8_t color2, uint8_t color3) {
+  uint32_t pixels;
+  uint8_t color;
+  for (int j = 0; j < 4; j += 2)
+  {
+    switch ((pixel_data >> j) & 3)
+    {
+    case 0:
+      color = color0;
+      break;
+    case 1:
+      color = color1;
+      break;
+    case 2:
+      color = color2;
+      break;
+    case 3:
+      color = color3;
+      break;
+    }
+
+    pixels |= luma_table[color];
+    pixels <<=8;
+  }
+
+  EMIT_PIXEL4(pixels);
+  EMIT_PIXEL4(pixels);
+}
+
+
+
+/**
+ * Each bit in pixel data represent a pixel
+ */
+inline void emit8_pixels(uint8_t pixel_data, uint8_t color0, uint8_t color1) {
+#ifdef __arm__
+  emit4_pixels(pixel_data>>4,color0,color1);
+  emit4_pixels(pixel_data,color0,color1);
+#else
+  for (int j = 0; j < 8; j++)
+  {
+    uint8_t color = (pixel_data << j) & 0x80 ? color1 : color0;
+    EMIT_PIXEL(color);
+  }
+#endif
+}
+
+inline void emit8_mcpixels(uint8_t pixel_data, uint8_t color0, uint8_t color1,uint8_t color2, uint8_t color3) {
+  uint8_t color;
+
+#ifdef __arm__
+  emit4_mcpixels(pixel_data>>4,color0,color1,color2,color3);
+  emit4_mcpixels(pixel_data,color0,color1,color2,color3);
+#else
+
+  for (int j = 0; j < 8; j += 2)
+  {
+    switch ((pixel_data >> (6 - j)) & 3)
+    {
+    case 0:
+      color = color0;
+      break;
+    case 1:
+      color = color1;
+      break;
+    case 2:
+      color = color2;
+      break;
+    case 3:
+      color = color3;
+      break;
+    }
+
+    EMIT_PIXEL(color);
+    EMIT_PIXEL(color);
+  }
+#endif
+}
+
+
 uint8_t
 vic_reg_read(uint16_t address)
 {
@@ -272,7 +427,6 @@ vic_reg_read(uint16_t address)
 int
 vic_clock()
 {
-  int Y = RASTER_Y;
   uint8_t color;
   uint8_t g_data; //8 pixels to be draw in in this cycle
   int stun_cycles = 0;
@@ -281,12 +435,26 @@ vic_clock()
   int color2 = 0;
   int color3 = 0;
 
-  if (vic_regs[IRQ] & 0x80)
-  {
-    irq6502();
+  //SYNC value
+  if(X==6 && (RASTER_Y==2)) {
+    SYNC(0);
+    //4.7us at the beginning of each line
+    //64us at the end of each frame
+
   }
 
-  int yy = Y - first_line;
+  //Colorburst
+  //if(X==7) {
+    //COLOR_SEQ(0b1100);
+    //LUMINA_SEQ(0)
+  //}
+
+  //if (vic_regs[IRQ] & 0x80)
+  //{
+  //  irq6502();
+  //}
+
+  int yy = RASTER_Y - first_line;
   unsigned int RC = (yy + YSCROLL) & 7;
 
   if ((X == 11) && (RC == 0))
@@ -296,7 +464,7 @@ vic_clock()
     stun_cycles += 42;
     for (int j = 0; j < 40; j++)
     {
-      video_ram[j] = (color_ram[VCBASE + j] << 8) | vic_ram_read(VM | VCBASE + j);
+      video_ram[j] = (color_ram[VCBASE + j] << 8) | vic_ram_read(VM | (VCBASE + j));
     }
   }
 
@@ -359,39 +527,15 @@ vic_clock()
 
     if (MCM)
     {
-      for (int j = 0; j < 8; j += 2)
-      {
-        switch ((g_data >> (6 - j)) & 3)
-        {
-        case 0:
-          color = color0;
-          break;
-        case 1:
-          color = color1;
-          break;
-        case 2:
-          color = color2;
-          break;
-        case 3:
-          color = color3;
-          break;
-        }
-
-        EMIT_PIXEL(color);
-        EMIT_PIXEL(color);
-      }
-    }
+      emit8_mcpixels(g_data,color0,color1,color2,color3);    }
     else
     {
-      for (int j = 0; j < 8; j++)
-      {
-        color = (g_data << j) & 0x80 ? color1 : color0;
-        EMIT_PIXEL(color);
-      }
+      emit8_pixels(g_data,color0,color1);
     }
 
 #ifndef __arm__
     /*Draw sprites */
+    if(vic_regs[SPR_EN])
     for (int i = 0; i < 8; i++)
     {
       if (vic_regs[SPR_EN] & (1 << i))
@@ -438,8 +582,8 @@ vic_clock()
 
                 if ((pixel >> j) & 3)
                 {
-                  pixelbuf[Y][X * 8 + 6 - j] = rgb_palette[color];
-                  pixelbuf[Y][X * 8 + 6 - j + 1] = rgb_palette[color];
+                  pixelbuf[RASTER_Y][X * 8 + 6 - j] = rgb_palette[color];
+                  pixelbuf[RASTER_Y][X * 8 + 6 - j + 1] = rgb_palette[color];
                 }
               }
             }
@@ -451,7 +595,7 @@ vic_clock()
               {
                 if (pixel & (1 << (7 - j)))
                 {
-                  pixelbuf[Y][X * 8 + j] = rgb_palette[color];
+                  pixelbuf[RASTER_Y][X * 8 + j] = rgb_palette[color];
                 }
               }
             }
@@ -470,17 +614,12 @@ vic_clock()
   {
     //outside screen area
     color = vic_regs[BO_COLOR] & 0xF;
-    for (int j = 0; j < 8; j++)
-    {
-      EMIT_PIXEL(color);
-    }
+    emit8_pixels(0,color,0);
   }
   else
   {
-    for (int j = 0; j < 8; j++)
-    {
-      EMIT_PIXEL(0);
-    }
+    pixelbuf_p+=2;
+    //emit8_pixels(0,1,0);
   }
 
   X++;
@@ -505,6 +644,7 @@ vic_clock()
       if (vic_regs[IRQ_EN] & 1)
       {
         vic_regs[IRQ] |= 0x80;
+        irq6502();
       }
     }
 

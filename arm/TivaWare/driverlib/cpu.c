@@ -40,7 +40,6 @@
 
 #include <stdint.h>
 #include "driverlib/cpu.h"
-
 //*****************************************************************************
 //
 // Wrapper function for the CPSID instruction.  Returns the state of PRIMASK
@@ -51,7 +50,7 @@
 uint32_t __attribute__((naked))
 CPUcpsid(void)
 {
-    uint32_t ui32Ret;
+
 
     //
     // Read PRIMASK and disable interrupts.
@@ -59,7 +58,7 @@ CPUcpsid(void)
     __asm("    mrs     r0, PRIMASK\n"
           "    cpsid   i\n"
           "    bx      lr\n"
-          : "=r" (ui32Ret));
+          );
 
     //
     // The return is handled in the inline assembly, but the compiler will
@@ -67,7 +66,6 @@ CPUcpsid(void)
     // that this does not result in any code being produced because of the
     // naked attribute).
     //
-    return(ui32Ret);
 }
 #endif
 #if defined(ewarm)
@@ -133,14 +131,12 @@ CPUcpsid(void)
 uint32_t __attribute__((naked))
 CPUprimask(void)
 {
-    uint32_t ui32Ret;
-
     //
     // Read PRIMASK and disable interrupts.
     //
     __asm("    mrs     r0, PRIMASK\n"
           "    bx      lr\n"
-          : "=r" (ui32Ret));
+          );
 
     //
     // The return is handled in the inline assembly, but the compiler will
@@ -148,7 +144,6 @@ CPUprimask(void)
     // that this does not result in any code being produced because of the
     // naked attribute).
     //
-    return(ui32Ret);
 }
 #endif
 #if defined(ewarm)
@@ -211,7 +206,7 @@ CPUprimask(void)
 uint32_t __attribute__((naked))
 CPUcpsie(void)
 {
-    uint32_t ui32Ret;
+
 
     //
     // Read PRIMASK and enable interrupts.
@@ -219,7 +214,7 @@ CPUcpsie(void)
     __asm("    mrs     r0, PRIMASK\n"
           "    cpsie   i\n"
           "    bx      lr\n"
-          : "=r" (ui32Ret));
+          );
 
     //
     // The return is handled in the inline assembly, but the compiler will
@@ -227,7 +222,7 @@ CPUcpsie(void)
     // that this does not result in any code being produced because of the
     // naked attribute).
     //
-    return(ui32Ret);
+
 }
 #endif
 #if defined(ewarm)
@@ -388,14 +383,14 @@ CPUbasepriSet(uint32_t ui32NewBasepri)
 uint32_t __attribute__((naked))
 CPUbasepriGet(void)
 {
-    uint32_t ui32Ret;
+
 
     //
     // Read BASEPRI
     //
     __asm("    mrs     r0, BASEPRI\n"
           "    bx      lr\n"
-          : "=r" (ui32Ret));
+          );
 
     //
     // The return is handled in the inline assembly, but the compiler will
@@ -403,7 +398,6 @@ CPUbasepriGet(void)
     // that this does not result in any code being produced because of the
     // naked attribute).
     //
-    return(ui32Ret);
 }
 #endif
 #if defined(ewarm)
