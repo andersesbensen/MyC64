@@ -16,12 +16,12 @@
 #include<stdint.h>
 
 
-//#ifdef __arm__
+#ifdef __arm__
 #define NUM_4K_BLOCKS 6
-//#else
-//#define NUM_4K_BLOCKS 16
-//
-//#endif
+#else
+#define NUM_4K_BLOCKS 16
+#endif
+
 #define ADDR_MASK (NUM_4K_BLOCKS*4096-1)
 
 
@@ -39,7 +39,7 @@ void c64_key_press(int key, int state);
  */
 void c64_load_prg(const char* file);
 
-extern uint32_t pixelbuf[403][512];
+extern uint32_t pixelbuf[312][512];
 
 
 extern void vic_screen_draw_done();

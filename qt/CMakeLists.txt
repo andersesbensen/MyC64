@@ -11,8 +11,9 @@ set(CMAKE_C_FLAGS "-O3")
 
 find_package(Qt5Widgets)
 find_package(Qt5OpenGL)
+find_package(Qt5Multimedia)
 
 add_executable(myc64 main.cpp keyboard.cpp )
 
-target_link_libraries(myc64 c64 Qt5::Core Qt5::OpenGL Qt5::Widgets)
+target_link_libraries(myc64 c64 Qt5::Multimedia Qt5::Core Qt5::OpenGL Qt5::Widgets)
 

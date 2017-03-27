@@ -23,11 +23,14 @@ extern "C"
 #include <QMutex>
 #include <QUrl>
 #include <QMimeData>
+#include <QAudioOutput>
+#include <QBuffer>
+
 
 QMutex pix_buf_lock;
 extern int key_matrix(int keycode);
 
-
+int16_t audio_buffer[1024];
 
 class C64 : public QThread {
   Q_OBJECT
@@ -35,9 +38,13 @@ public:
   void sceeen_draw_done() {
     emit update();
   }
+  void audio_ready() {
+    emit update_audio();
+  }
 
 signals:
   void update();
+  void update_audio();
 
 protected:
   void run() {
@@ -59,13 +66,18 @@ extern "C" void vic_screen_draw_done() {
   the_c64->sceeen_draw_done();
 }
 
+extern "C" void sid_audio_ready(int16_t* data, int n) {
+  memcpy(audio_buffer,data,n);
+  the_c64->audio_ready();
+}
+
 class Window : public QMainWindow
 {
  Q_OBJECT
  public:
-  Window(QWidget *parent = 0) {
+  Window(QWidget *parent = 0)  {
     label = new QLabel;
-    label->resize(512,403);
+    label->resize(512,312);
     resize(label->size());
 
     setAcceptDrops(true);
@@ -73,7 +85,26 @@ class Window : public QMainWindow
     setFocusPolicy(Qt::StrongFocus);
     the_c64 = &c64;
     c64.start();
+
+
+    QAudioFormat format;
+
+    format.setSampleRate(44100);
+    format.setChannelCount(1);
+    format.setSampleSize(16);
+    format.setCodec("audio/pcm");
+    format.setByteOrder(QAudioFormat::LittleEndian);
+    format.setSampleType(QAudioFormat::SignedInt);
+
+    m_audioOutput = new QAudioOutput(format, this);
+//    m_audioOutput->setBufferSize(1024*2);
+
+    m_audio_buffer = m_audioOutput->start( );
+    m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
+
     connect(&c64, SIGNAL(update()), this, SLOT(update_screen()));
+    connect(&c64, SIGNAL(update_audio()), this, SLOT(play_audio_buffer()));
+
   }
 
   private slots:
@@ -84,6 +115,11 @@ class Window : public QMainWindow
     pix_buf_lock.unlock();
     update();
   }
+
+  void play_audio_buffer() {
+    m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
+  }
+
 
   protected:
   void keyPressEvent(QKeyEvent *event) {
@@ -134,6 +170,8 @@ class Window : public QMainWindow
  private:
  QLabel *label;
  C64 c64;
+ QAudioOutput* m_audioOutput;
+ QIODevice* m_audio_buffer;
 };
 
 

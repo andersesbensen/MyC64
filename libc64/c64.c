@@ -12,7 +12,7 @@
 #include "sys/time.h"
 #include "c64.h"
 #include "tape.h"
-
+#include "sid_wrapper.h"
 #include <unistd.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -132,8 +132,8 @@ read6502(uint16_t address)
     }
     else if (address < 0xD800)
     {
-      dbg_printf("Read SID\n");
       //SID
+      return sid_read( address & 0xFF);
     }
     else if (address < 0xDC00)
     {
@@ -205,8 +205,7 @@ write6502(uint16_t address, uint8_t value)
     else if (address < 0xD800)
     {
       //SID
-
-      dbg_printf("Write SID %4.4x %2.2x\n", address, value);
+      sid_write(address & 0xFF,  value);
     }
     else if (address < 0xDC00)
     {
@@ -238,6 +237,7 @@ void
 c64_init()
 {
   vic_init();
+  sid_init();
   memset(ram, 0, sizeof(ram));
   ram[0] = 0x2f;
   ram[1] = 0x37;
@@ -297,14 +297,15 @@ c65_run_frame()
     {
       nmi6502();
     }
-/*
+    sid_clock();
+
     uint8_t key=0x0;
     for(int i=0; i < 8; i++) {
       if( (cia1.PRA & (1<<i)) == 0) {
         key |= key_matrix2[i];
       }
     }
-    cia1.PRB = 0xFF & ~key;*/
+    cia1.PRB = 0xFF & ~key;
   }
 
 #ifndef __arm__
