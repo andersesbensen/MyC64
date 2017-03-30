@@ -131,6 +131,8 @@ const int cycles_per_line = 63;
 const int number_of_lines = 312;
 int first_line = 51;
 int last_line = 250;
+int first_x = 24;
+int last_x = 343;
 
 const int visible_pixels = 403;
 
@@ -335,8 +337,17 @@ vic_reg_write(uint16_t address, uint8_t value)
 
     break;
   case CTRL2:
+#if 0
     printf("CSEL=%i XSCROLL=%i\n",CSEL,XSCROLL);
 
+    if(CSEL) {
+      first_x = 24;
+      last_x = 343;
+    } else {
+      first_x = 31;
+      last_x= 334;
+    }
+#endif
     break;
   case RASTER:
     RST &= ~0xFF;
@@ -592,7 +603,7 @@ vic_clock()
 
     pixelbuf_p += 8;
   }
-  else if (RASTER_Y < (first_line) || RASTER_Y > (last_line) || CYCLE < 16 || CYCLE >= 56)
+  else if (RASTER_Y < (first_line) || RASTER_Y > (last_line) || (X < first_x) || (X> last_x))
   { //Border
     //outside screen area
     color0 = vic_regs[BO_COLOR] & 0xF;
@@ -673,7 +684,7 @@ vic_clock()
   /* Draw sprites*/
   if (vic_regs[SPR_EN])
   {
-    for (int i = 0; i < 8; i++)
+    for (int i = 7; i-- ; )
     {
       stun_cycles += sprite_engine(i, pixelbuf_p-8);
     }
