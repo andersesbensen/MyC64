@@ -10,7 +10,7 @@
 #include "cia.h"
 #include "c64.h"
 
-uint8_t vic_regs[47];
+static uint8_t vic_regs[47];
 
 #define MSBsX  0x10
 #define CTRL1  0x11
@@ -44,36 +44,6 @@ uint8_t vic_regs[47];
 #define CSEL     (vic_regs[CTRL2] & 0x08)
 #define XSCROLL  (vic_regs[CTRL2] & 0x7)
 
-#define mode (vic_regs[CTRL1] & 0x60) |  (vic_regs[CTRL2] & 0x10)
-
-#define VICII_PAL_NORMAL_FIRST_DISPLAYED_LINE        0x10   /* 16 */
-#define VICII_PAL_NORMAL_LAST_DISPLAYED_LINE         0x11f  /* 287 */
-#define VICII_PAL_FULL_FIRST_DISPLAYED_LINE          0x08   /* 8 */
-#define VICII_PAL_FULL_LAST_DISPLAYED_LINE           0x12c  /* 300 */
-#define VICII_PAL_DEBUG_FIRST_DISPLAYED_LINE         0x00   /* 0 */
-#define VICII_PAL_DEBUG_LAST_DISPLAYED_LINE          0x137  /* 311 */
-
-
-
-static const unsigned char BitReverseTable256[] =
-{
-  0x00, 0x80, 0x40, 0xC0, 0x20, 0xA0, 0x60, 0xE0, 0x10, 0x90, 0x50, 0xD0, 0x30, 0xB0, 0x70, 0xF0,
-  0x08, 0x88, 0x48, 0xC8, 0x28, 0xA8, 0x68, 0xE8, 0x18, 0x98, 0x58, 0xD8, 0x38, 0xB8, 0x78, 0xF8,
-  0x04, 0x84, 0x44, 0xC4, 0x24, 0xA4, 0x64, 0xE4, 0x14, 0x94, 0x54, 0xD4, 0x34, 0xB4, 0x74, 0xF4,
-  0x0C, 0x8C, 0x4C, 0xCC, 0x2C, 0xAC, 0x6C, 0xEC, 0x1C, 0x9C, 0x5C, 0xDC, 0x3C, 0xBC, 0x7C, 0xFC,
-  0x02, 0x82, 0x42, 0xC2, 0x22, 0xA2, 0x62, 0xE2, 0x12, 0x92, 0x52, 0xD2, 0x32, 0xB2, 0x72, 0xF2,
-  0x0A, 0x8A, 0x4A, 0xCA, 0x2A, 0xAA, 0x6A, 0xEA, 0x1A, 0x9A, 0x5A, 0xDA, 0x3A, 0xBA, 0x7A, 0xFA,
-  0x06, 0x86, 0x46, 0xC6, 0x26, 0xA6, 0x66, 0xE6, 0x16, 0x96, 0x56, 0xD6, 0x36, 0xB6, 0x76, 0xF6,
-  0x0E, 0x8E, 0x4E, 0xCE, 0x2E, 0xAE, 0x6E, 0xEE, 0x1E, 0x9E, 0x5E, 0xDE, 0x3E, 0xBE, 0x7E, 0xFE,
-  0x01, 0x81, 0x41, 0xC1, 0x21, 0xA1, 0x61, 0xE1, 0x11, 0x91, 0x51, 0xD1, 0x31, 0xB1, 0x71, 0xF1,
-  0x09, 0x89, 0x49, 0xC9, 0x29, 0xA9, 0x69, 0xE9, 0x19, 0x99, 0x59, 0xD9, 0x39, 0xB9, 0x79, 0xF9,
-  0x05, 0x85, 0x45, 0xC5, 0x25, 0xA5, 0x65, 0xE5, 0x15, 0x95, 0x55, 0xD5, 0x35, 0xB5, 0x75, 0xF5,
-  0x0D, 0x8D, 0x4D, 0xCD, 0x2D, 0xAD, 0x6D, 0xED, 0x1D, 0x9D, 0x5D, 0xDD, 0x3D, 0xBD, 0x7D, 0xFD,
-  0x03, 0x83, 0x43, 0xC3, 0x23, 0xA3, 0x63, 0xE3, 0x13, 0x93, 0x53, 0xD3, 0x33, 0xB3, 0x73, 0xF3,
-  0x0B, 0x8B, 0x4B, 0xCB, 0x2B, 0xAB, 0x6B, 0xEB, 0x1B, 0x9B, 0x5B, 0xDB, 0x3B, 0xBB, 0x7B, 0xFB,
-  0x07, 0x87, 0x47, 0xC7, 0x27, 0xA7, 0x67, 0xE7, 0x17, 0x97, 0x57, 0xD7, 0x37, 0xB7, 0x77, 0xF7,
-  0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
-};
 
 /**
  *
@@ -150,8 +120,6 @@ static uint16_t VM; //Videomatrix pointer
 static uint16_t c_ptr; //Character generator
 static int16_t video_ram[40];
 
-//static int SPRITE_X[8];
-//static int SPRITE_Y[8];
 
 typedef struct
 {
@@ -162,7 +130,7 @@ typedef struct
   uint32_t pixels;
 } sprite_state_t;
 
-sprite_state_t sprites[8];
+static sprite_state_t sprites[8];
 
 extern uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 extern uint8_t ram[NUM_4K_BLOCKS * 4096];
@@ -319,8 +287,12 @@ vic_reg_write(uint16_t address, uint8_t value)
     }
     break;
   case 0x18:
-    VM = ((value >> 4) & 0xF) << 10; //1K block
+  {
+    VM= ((value >> 4) & 0xF) << 10; //1K block
     c_ptr = ((value >> 1) & 0x7) << 11; //2K block
+
+    //printf("Raster line %i\n",RASTER_Y);
+  }
     break;
   case CTRL1:
     RST &= ~0x100;
@@ -464,23 +436,8 @@ uint8_t
 vic_reg_read(uint16_t address)
 {
   //printf("VIC reg read %4.4x line %i\n",address,RASTER_Y);
-  if (address < 16)
-  {
-    return address & 1 ? sprites[address >> 1].Y & 0xFF : sprites[address >> 1].X & 0xFF;
-  }
-
   switch (address)
   {
-  case MSBsX: //MSB of sprite X
-    {
-      int r = 0;
-      for (int i = 0; i < 8; i++)
-      {
-        if (sprites[i].X & 0x100)
-          r |= (1 << i);
-      }
-      return r;
-    }
   case CTRL1:
     return (vic_regs[address] & ~0x80) | ((RASTER_Y & 0x100) >> 1);
   case RASTER:
@@ -525,14 +482,13 @@ sprite_engine(int i,uint32_t* pixel)
     s->pixels |= vic_ram_read( MP  | (s->MCBASE + 1)) << 16;
     s->pixels |= vic_ram_read( MP  | (s->MCBASE + 2)) << 8;
 
-    stun_cycles+=3;
-    //printf("Line read(%02i,%02i) %08x %x\n",i,s->MCBASE,s->pixels,s->X & 7);
-
+    // There are 4 accesses here, one data pointer access and 3 pixel data, two accesses pr cycle gives two cycles.
+    stun_cycles+=2;
     s->MCBASE += 3;
     s->pixels = s->pixels >> (s->X & 7);
   }
 
-  if (s->pixels )
+  if ( s->pixels )
   {
     // printf("%i %i %i %08x\n", X,s->X/8+10,X - s->X/8, s->pixels);
     //Check multicolor
@@ -544,9 +500,8 @@ sprite_engine(int i,uint32_t* pixel)
         switch ( s->pixels & 0xc0000000)
         {
         case 0:
-          pixel++;
-          pixel++;
-          continue;
+          color = 0xFF; //Transparent
+          break;
         case 1<<30: //Sprite multicolor 0 ($d025)
           color = vic_regs[0x25];
           break;
@@ -558,10 +513,14 @@ sprite_engine(int i,uint32_t* pixel)
           break;
         }
 
-        *pixel++ = rgb_palette[color];
-        *pixel++ = rgb_palette[color];
+        if(color !=0xFF) {
+          *pixel++ = rgb_palette[color];
+          *pixel++ = rgb_palette[color];
+        } else {
+          pixel+=2;
+        }
         if(((vic_regs[MxXE] & (1<<i)) == 0) || (j&1)  ) {
-          s->pixels = s->pixels<<2;
+          s->pixels <<= 2;
         }
       }
     }
@@ -608,7 +567,6 @@ vic_clock()
     //outside screen area
     color0 = vic_regs[BO_COLOR] & 0xF;
     emit8_pixels(0, color0, 0);
-
   }
   else
   { //Display state
@@ -716,7 +674,7 @@ vic_clock()
   {
 
     //If this a "bad line"
-    stun_cycles += 40;
+    stun_cycles += 43;
     for (int j = 0; j < 40; j++)
     {
       video_ram[j] = (color_ram[VCBASE + j] << 8) | vic_ram_read(VM | (VCBASE + j));
@@ -740,7 +698,7 @@ vic_clock()
   CYCLE++;
   X = (X + 8) & 0x1ff;
 
-  if (CYCLE > 63)
+  if (CYCLE == 63)
   {
     CYCLE = 0;
     X=0x194 + 8; //First X-coord of a line
@@ -764,14 +722,7 @@ vic_clock()
      * <= $f7 and the lower three bits of RASTER are equal to YSCROLL and if the
      * DEN bit was set during an arbitrary cycle of raster line $30.
      */
-    if ((RASTER_Y > 0x30) && (RASTER_Y < 0xf7) && ((RASTER_Y & 7) == YSCROLL))
-    {
-      BA = 1;
-    }
-    else
-    {
-      BA = 0;
-    }
+    BA = ((RASTER_Y > 0x30) && (RASTER_Y < 0xf7) && ((RASTER_Y & 7) == YSCROLL));
 
     HSYNC;
 

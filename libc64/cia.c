@@ -6,6 +6,7 @@
  */
 #include "cia.h"
 #include "fake6502.h"
+#include <string.h>
 //#include<stdio.h>
 
 extern int clock_tick;
@@ -13,6 +14,13 @@ extern int clock_tick;
 //#define dbg_print(fmt,...) printf("%10i %s: " fmt,clock_tick,cia->name,__VA_ARGS__)
 
 #define dbg_print(fmt,...)
+
+ALL_STATIC cia_t cia1;
+ALL_STATIC cia_t cia2;
+
+uint8_t key_matrix2[8];
+
+
 void cia_reg_write(cia_t* cia,uint16_t addr, uint8_t value) {
 
   switch(addr) {
@@ -86,7 +94,17 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
   case 0:
     return cia->PRA ;
   case 1:
-    return cia->PRB;
+    if(cia == &cia1) {
+      uint8_t key=0x0;
+      for(int i=0; i < 8; i++) {
+        if( (cia1.PRA & (1<<i)) == 0) {
+          key |= key_matrix2[i];
+        }
+      }
+      return 0xFF & ~key;
+    } else {
+      return cia->PRB;
+    }
   case 2:
     return cia->DDRA;
   case 3:
@@ -125,7 +143,7 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
 }
 
 
-int cia_clock_timer(cia_timer_t *t) {
+static int cia_clock_timer(cia_timer_t *t) {
   if(t->control & 1) {
     if((t->control & 0x20)) //SP count or CNT
     {
@@ -148,15 +166,20 @@ int cia_clock_timer(cia_timer_t *t) {
   return 0;
 }
 
-int cia_clock(cia_t* cia) {
-  int irq = 0;
+static void __cia_clock(cia_t* cia) {
+
   if( cia_clock_timer(&cia->t[0] )){
    dbg_print("TimerA underflow latch %i\n",cia->t[0].latch);
 
     cia->IRQ |= 1;
     if(cia->IRQ_MASK & 1) {
       cia->IRQ |= 0x80;
-      irq = 1;
+
+      if(cia == &cia1) {
+        irq6502();
+      } else {
+        nmi6502();
+      }
     }
   }
 
@@ -166,11 +189,26 @@ int cia_clock(cia_t* cia) {
     cia->IRQ |= 2;
     if(cia->IRQ_MASK & 2) {
       cia->IRQ |= 0x80;
-      irq = 1;
+
+      if(cia == &cia1) {
+        irq6502();
+      } else {
+        nmi6502();
+      }
+
     }
   }
-
-  return irq;
 }
 
+void cia_clock() {
+  __cia_clock(&cia1);
+  __cia_clock(&cia2);
+}
+
+void cia_init() {
+  memset(&cia1, 0, sizeof(cia_t));
+  memset(&cia2, 0, sizeof(cia_t));
+  cia1.name = "CIA1";
+  cia2.name = "CIA2";
+}
 

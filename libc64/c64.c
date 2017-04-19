@@ -42,8 +42,6 @@ uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 #define CIA2_A_CLK_OUT  (1<<4)
 #define CIA2_A_ATN_OUT  (1<<3)
 
-ALL_STATIC cia_t cia1;
-ALL_STATIC cia_t cia2;
 ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 
 typedef enum
@@ -242,16 +240,11 @@ c64_init()
   ram[0] = 0x2f;
   ram[1] = 0x37;
 
-  memset(&cia1, 0, sizeof(cia_t));
-  memset(&cia2, 0, sizeof(cia_t));
-  cia1.name = "CIA1";
-  cia2.name = "CIA2";
+  cia_init();
 
   reset6502();
   clock_tick = 0;
 }
-
-uint8_t key_matrix2[8];
 void
 c64_key_press(int key, int state)
 {
@@ -282,30 +275,16 @@ c65_run_frame()
     clock_tick++;
     if (cpu_halt_clocks == 0)
     {
-      if (cia1.IRQ & 0x80)
-      {
-        irq6502();
-      }
       cpu_halt_clocks = step6502();
     }
     cpu_halt_clocks--;
 
     cpu_halt_clocks += vic_clock();
 
-    cia_clock(&cia1);
-    if (cia_clock(&cia2))
-    {
-      nmi6502();
-    }
-    sid_clock();
+    cia_clock();
 
-    uint8_t key=0x0;
-    for(int i=0; i < 8; i++) {
-      if( (cia1.PRA & (1<<i)) == 0) {
-        key |= key_matrix2[i];
-      }
-    }
-    cia1.PRB = 0xFF & ~key;
+
+    //sid_clock();
   }
 
 #ifndef __arm__

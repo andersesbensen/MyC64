@@ -65,11 +65,13 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr);
 /**
  * Return true if edge interrupt occurred.
  */
-int cia_clock(cia_t* cia);
+void cia_clock();
 
 
-ALL_STATIC cia_t cia1;
-ALL_STATIC cia_t cia2;
+
+extern uint8_t key_matrix2[8];
+extern cia_t cia1;
+extern cia_t cia2;
 
 
 #endif /* TESTAPPLICATIONS_MYC64_CIA_H_ */
