@@ -261,6 +261,12 @@ c64_key_press(int key, int state)
 void
 c65_run_frame()
 {
+  //40ms
+
+#define CHUNK_MS 10
+#define CLOCKS_PR_CHUNK  (985248) / (1000/CHUNK_MS)
+
+
 #ifndef __arm__
   struct timeval time1;
   struct timeval time2;
@@ -270,7 +276,7 @@ c65_run_frame()
 
   int cpu_halt_clocks = 0;
 
-  for (int i = 0; i < 40 * 403; i++)
+  for (int i = 0; i < CLOCKS_PR_CHUNK; i++)
   {
     clock_tick++;
     if (cpu_halt_clocks == 0)
@@ -284,7 +290,7 @@ c65_run_frame()
     cia_clock();
 
 
-    //sid_clock();
+    sid_clock();
   }
 
 #ifndef __arm__
@@ -292,10 +298,10 @@ c65_run_frame()
 
   timersub(&time2, &time1, &delta);
 
-  if (delta.tv_usec < 40 * 403)
+  if (delta.tv_usec < CHUNK_MS*1000) //100ms
   {
     //dbg_printf("Time spent %i\n",actual_time);
-    usleep((40 * 403 - delta.tv_usec));
+    usleep(CHUNK_MS*1000 - delta.tv_usec);
   }
 #endif
 }

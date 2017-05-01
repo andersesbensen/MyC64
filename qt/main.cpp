@@ -26,11 +26,14 @@ extern "C"
 #include <QAudioOutput>
 #include <QBuffer>
 
+extern "C" {
+ #include "sid_wrapper.h"
+}
 
 QMutex pix_buf_lock;
 extern int key_matrix(int keycode);
 
-int16_t audio_buffer[1024];
+int16_t audio_buffer[SAMPLE_BUFFER_SIZE];
 
 class C64 : public QThread {
   Q_OBJECT
@@ -67,7 +70,7 @@ extern "C" void vic_screen_draw_done() {
 }
 
 extern "C" void sid_audio_ready(int16_t* data, int n) {
-  memcpy(audio_buffer,data,n);
+  memcpy(audio_buffer,data,n*sizeof(int16_t));
   the_c64->audio_ready();
 }
 
@@ -97,8 +100,7 @@ class Window : public QMainWindow
     format.setSampleType(QAudioFormat::SignedInt);
 
     m_audioOutput = new QAudioOutput(format, this);
-//    m_audioOutput->setBufferSize(1024*2);
-
+    m_audioOutput->setBufferSize(SAMPLE_BUFFER_SIZE*2);
     m_audio_buffer = m_audioOutput->start( );
     m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
 
@@ -117,7 +119,9 @@ class Window : public QMainWindow
   }
 
   void play_audio_buffer() {
+    pix_buf_lock.lock();
     m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
+    pix_buf_lock.unlock();
   }
 
 
