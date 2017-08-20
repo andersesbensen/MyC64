@@ -546,6 +546,7 @@ sprite_engine(int i,uint32_t* pixel)
   return stun_cycles;
 }
 
+
 int
 vic_clock()
 {
@@ -556,19 +557,17 @@ vic_clock()
   int color2 = 0;
   int color3 = 0;
 
-  if (RASTER_Y < 8 || RASTER_Y > (7 + 43 + 200 + 49) || CYCLE < 10)
+  static enum {STATE_VSYNC,STATE_HSYNC,STATE_HSYNC_TOP,STATE_HSYNC_BOTTOM,STATE_DISPLAY,STATE_TOP,STATE_LEFT,STATE_RIGHT,STATE_BOTTOM } state = STATE_VSYNC;
+
+
+  //if (RASTER_Y < 8 || RASTER_Y > (7 + 43 + 200 + 49) || (CYCLE < 14))
+
+  if((state == STATE_VSYNC) || (state == STATE_HSYNC))
   {
     //Outside visible area
-
     pixelbuf_p += 8;
   }
-  else if (RASTER_Y < (first_line) || RASTER_Y > (last_line) || (X < first_x) || (X> last_x))
-  { //Border
-    //outside screen area
-    color0 = vic_regs[BO_COLOR] & 0xF;
-    emit8_pixels(0, color0, 0);
-  }
-  else
+  else if(state == STATE_DISPLAY)
   { //Display state
     int multi_color=0;
     //This is c-data bits
@@ -637,6 +636,11 @@ vic_clock()
     /*4. VC and VMLI are incremented after each g-access in display state.*/
     VC++;
     VMLI++;
+  } else {
+    //Border
+    //outside screen area
+    color0 = vic_regs[BO_COLOR] & 0xF;
+    emit8_pixels(0, color0, 0);
   }
 
   /* Draw sprites*/
@@ -648,16 +652,26 @@ vic_clock()
     }
   }
 
+  CYCLE++;
+  X = (X + 8) & 0x1ff;
+
   /*
    * In the first phase of cycle 14 of each line, VC is loaded from VCBASE
    * (VCBASE->VC) and VMLI is cleared. If there is a Bad Line Condition in
    * this phase, RC is also reset to zero.
    */
-  if (CYCLE == 14)
+
+  if ( (state == STATE_HSYNC) && CYCLE == 14)
   {
     VC = VCBASE;
     VMLI = 0;
 
+    if(RASTER_Y < (first_line))
+      state = STATE_TOP;
+    else if (RASTER_Y > (last_line) )
+      state = STATE_BOTTOM;
+    else
+      state = STATE_LEFT;
     if (BA)
     {
       RC = 0;
@@ -670,7 +684,7 @@ vic_clock()
    in the video matrix/color line at the position specified by VMLI. These
    data is internally read from the position specified by VMLI as well on
    each g-access in display state.*/
-  if (BA && (CYCLE == 12))
+  if ((state == STATE_HSYNC) &&BA && (CYCLE == 12))
   {
 
     //If this a "bad line"
@@ -686,8 +700,9 @@ vic_clock()
    the video logic is in display state afterwards (this is always the case
    if there is a Bad Line Condition), RC is incremented.
    */
-  if (CYCLE == 58)
+  if ((state == STATE_DISPLAY) && (CYCLE == 58))
   {
+    state = STATE_RIGHT;
     if (RC == 7)
     {
       VCBASE = VC;
@@ -695,13 +710,16 @@ vic_clock()
     RC++;
   }
 
-  CYCLE++;
-  X = (X + 8) & 0x1ff;
+  if((state == STATE_LEFT) && (CYCLE == 18)) {
+    state = STATE_DISPLAY;
+  }
 
-  if (CYCLE == 63)
+
+  /*PAL has 63 cycles pr line*/
+  if ((CYCLE == 63) && ((state == STATE_RIGHT) || (state == STATE_VSYNC)|| (state == STATE_TOP)|| (state == STATE_BOTTOM)))
   {
     CYCLE = 0;
-    X=0x194 + 8; //First X-coord of a line
+    X=0x194-8 ; //First X-coord of a line
     /*Check for raster irq*/
     RASTER_Y++;
 
@@ -726,12 +744,17 @@ vic_clock()
 
     HSYNC;
 
+    if(RASTER_Y > 7) {
+      state = STATE_HSYNC;
+    }
+
     if (RASTER_Y == number_of_lines)
     {
       vic_screen_draw_done();
       RASTER_Y = 0;
       VCBASE = 0;
       VSYNC;
+      state = STATE_VSYNC;
     }
   }
 
