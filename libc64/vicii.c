@@ -199,7 +199,7 @@ void inline EMIT_PIXEL4(int x)
 #define SYNC(x)
 #else
 uint32_t pixelbuf[312][512];
-uint32_t* pixelbuf_p;
+static uint32_t* pixelbuf_p  ;
 #define VSYNC
 #define HSYNC pixelbuf_p=pixelbuf[RASTER_Y]
 #define EMIT_PIXEL(x) *pixelbuf_p++ = rgb_palette[x]

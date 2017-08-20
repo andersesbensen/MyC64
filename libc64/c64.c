@@ -119,7 +119,7 @@ read6502(uint16_t address)
 
     return ram[address & ADDR_MASK ];
   case BASICROM:
-    return basic_bin[address - 0xA000];
+    return basic_bin[address & 0x1FFF];
   case IO:
     if (address < 0xD400)
     {
@@ -156,10 +156,9 @@ read6502(uint16_t address)
     return 0;
   case KERNALROM:
     //dbg_printf("READ %4.4x\n",address);
-
-    return kernal_bin[address - 0xE000];
+    return kernal_bin[address & 0x1FFF];
   case CHARROM:
-    return chargen_bin[address - 0xD000];
+    return chargen_bin[address & 0xFFF];
   }
 
   return 0;
