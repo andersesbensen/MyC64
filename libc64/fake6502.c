@@ -175,6 +175,8 @@ static uint32_t clockticks6502 = 0;
 static uint16_t oldpc, ea, reladdr, value, result;
 static uint8_t opcode;
 
+static uint32_t op_fectch;
+
 //externally supplied functions
 extern uint8_t
 read6502(uint16_t address);
@@ -252,7 +254,7 @@ imm()
 static void
 zp()
 { //zero-page
-  ea = (uint16_t) read6502((uint16_t) pc++);
+  ea = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
 }
 
 static void
@@ -270,7 +272,8 @@ zpy()
 static void
 rel()
 { //relative for branch ops (8-bit immediate value, sign-extended)
-  reladdr = (uint16_t) read6502(pc++);
+  reladdr = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
+
   if (reladdr & 0x80)
     reladdr |= 0xFF00;
 }
@@ -278,7 +281,7 @@ rel()
 static void
 abso()
 { //absolute
-  ea = (uint16_t) read6502(pc) | ((uint16_t) read6502(pc + 1) << 8);
+  ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   pc += 2;
 }
 
@@ -286,7 +289,7 @@ static void
 absx()
 { //absolute,X
   uint16_t startpage;
-  ea = ((uint16_t) read6502(pc) | ((uint16_t) read6502(pc + 1) << 8));
+  ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   startpage = ea & 0xFF00;
   ea += (uint16_t) x;
 
@@ -302,7 +305,7 @@ static void
 absy()
 { //absolute,Y
   uint16_t startpage;
-  ea = ((uint16_t) read6502(pc) | ((uint16_t) read6502(pc + 1) << 8));
+  ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   startpage = ea & 0xFF00;
   ea += (uint16_t) y;
 
@@ -318,7 +321,8 @@ static void
 ind()
 { //indirect
   uint16_t eahelp, eahelp2;
-  eahelp = (uint16_t) read6502(pc) | (uint16_t) ((uint16_t) read6502(pc + 1) << 8);
+  eahelp = (uint16_t) (op_fectch >> 8) & 0xFFFF;
+
   eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //replicate 6502 page-boundary wraparound bug
   ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
   pc += 2;
@@ -328,7 +332,8 @@ static void
 indx()
 { // (indirect,X)
   uint16_t eahelp;
-  eahelp = (uint16_t) (((uint16_t) read6502(pc++) + (uint16_t) x) & 0xFF); //zero-page wraparound for table pointer
+  eahelp = (uint16_t) (((uint16_t)  (op_fectch >> 8) & 0xFF + (uint16_t) x) & 0xFF); //zero-page wraparound for table pointer
+  pc++;
   ea = (uint16_t) read6502(eahelp & 0x00FF) | ((uint16_t) read6502((eahelp + 1) & 0x00FF) << 8);
 }
 
@@ -336,7 +341,7 @@ static void
 indy()
 { // (indirect),Y
   uint16_t eahelp, eahelp2, startpage;
-  eahelp = (uint16_t) read6502(pc++);
+  eahelp = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
   eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //zero-page wraparound
   ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
   startpage = ea & 0xFF00;
@@ -1174,13 +1179,20 @@ irq6502()
 }
 
 
+
+
+int32_t pla_read32(int address) ;
 int
 step6502()
 {
   int ppc = pc;
 
   clockticks6502 = 0;
-  opcode = read6502(pc++);
+
+  op_fectch = pla_read32(pc);
+  opcode = op_fectch & 0xFF;
+
+  pc++;
 
   status |= FLAG_CONSTANT;
 
