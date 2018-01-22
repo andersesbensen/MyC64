@@ -117,7 +117,12 @@ static int VMLI = 0; //Video matrix line index
 static int BA; //Bad line
 
 static uint16_t VM; //Videomatrix pointer
+static uint8_t *VM_p; //Videomatrix pointer
+
 static uint16_t c_ptr; //Character generator
+static uint8_t *c_ptr_p; //Character generator
+static uint8_t *c_ptr_bm_p; //Character generator
+
 static int16_t video_ram[40];
 
 
@@ -209,7 +214,7 @@ static uint32_t* pixelbuf_p  ;
 /**
  * Read a 14 bit address
  */
-static uint8_t
+static uint8_t*
 vic_ram_read(uint16_t address)
 {
   uint8_t bank;
@@ -228,13 +233,13 @@ vic_ram_read(uint16_t address)
   //if (((bank & 1) == 0) && (addr14 >= 0x1000) && (addr14 < 0x2000))
   if (((bank & 1) == 0) && ((addr14 & 0xf000) == 0x1000))
   {
-    return chargen_bin[address & 0xFFF];
+    return &chargen_bin[address & 0xFFF];
   }
   else
   {
     int final_addr = (bank << 14) | (addr14);
 
-    return ram[final_addr & ADDR_MASK];
+    return &ram[final_addr & ADDR_MASK];
   }
 }
 
@@ -249,8 +254,12 @@ vic_init()
   RASTER_Y = 0;
   VSYNC;
   HSYNC;
+
+
+  VM_p = vic_ram_read(0);
+  c_ptr_p = vic_ram_read(0);
+  c_ptr_bm_p = vic_ram_read(0);
 }
-;
 
 void
 vic_reg_write(uint16_t address, uint8_t value)
@@ -290,6 +299,10 @@ vic_reg_write(uint16_t address, uint8_t value)
   {
     VM= ((value >> 4) & 0xF) << 10; //1K block
     c_ptr = ((value >> 1) & 0x7) << 11; //2K block
+
+    VM_p = vic_ram_read(VM);
+    c_ptr_p = vic_ram_read(c_ptr);
+    c_ptr_bm_p = vic_ram_read(c_ptr & 0x2000);
 
     //printf("Raster line %i\n",RASTER_Y);
   }
@@ -476,11 +489,12 @@ sprite_engine(int i,uint32_t* pixel)
   {
 
     //printf("x %3i: %3i \n",i,s->X);
-    uint16_t MP = vic_ram_read(VM | 0x3f8 | i)<<6; //8 bits
+    //uint16_t MP = *vic_ram_read(VM | 0x3f8 | i)<<6; //8 bits
+    uint16_t MP =VM_p[0x3f8 | i]<<6; //8 bits
 
-    s->pixels =  vic_ram_read( MP  | (s->MCBASE + 0)) << 24;
-    s->pixels |= vic_ram_read( MP  | (s->MCBASE + 1)) << 16;
-    s->pixels |= vic_ram_read( MP  | (s->MCBASE + 2)) << 8;
+    s->pixels =  *vic_ram_read( MP  | (s->MCBASE + 0)) << 24;
+    s->pixels |= *vic_ram_read( MP  | (s->MCBASE + 1)) << 16;
+    s->pixels |= *vic_ram_read( MP  | (s->MCBASE + 2)) << 8;
 
     // There are 4 accesses here, one data pointer access and 3 pixel data, two accesses pr cycle gives two cycles.
     stun_cycles+=2;
@@ -577,7 +591,7 @@ vic_clock()
     if (BMM) //Standard bitmap mode (ECM/BMM/MCM=0/1/0)
     {
       //Read Pixel
-      g_data = vic_ram_read((c_ptr & 0x2000) | (VC << 3) | RC);
+      g_data = c_ptr_bm_p[(VC << 3) | RC];
 
       if (MCM && (ECM == 0))
       {
@@ -601,7 +615,7 @@ vic_clock()
     else
     { //Text mode
       //Read Pixels
-      g_data = vic_ram_read(c_ptr | (D << 3) | RC);
+      g_data = c_ptr_p[(D << 3) | RC];
       if (MCM && (bit_color & 0x8))
       { //3.7.3.2. Multicolor text mode (ECM/BMM/MCM=0/0/1)
         color0 = vic_regs[BG_COLOR0];
@@ -677,7 +691,7 @@ vic_clock()
     stun_cycles += 43;
     for (int j = 0; j < 40; j++)
     {
-      video_ram[j] = (color_ram[VCBASE + j] << 8) | vic_ram_read(VM | (VCBASE + j));
+      video_ram[j] = (color_ram[VCBASE + j] << 8) | VM_p[ VCBASE + j];
     }
   }
 
@@ -722,7 +736,7 @@ vic_clock()
      * <= $f7 and the lower three bits of RASTER are equal to YSCROLL and if the
      * DEN bit was set during an arbitrary cycle of raster line $30.
      */
-    BA = ((RASTER_Y > 0x30) && (RASTER_Y < 0xf7) && ((RASTER_Y & 7) == YSCROLL));
+    BA = ((RASTER_Y >= 0x30) && (RASTER_Y <= 0xf7) && ((RASTER_Y & 7) == YSCROLL));
 
     HSYNC;
 
@@ -736,4 +750,145 @@ vic_clock()
   }
 
   return stun_cycles;
+}
+
+
+static void cpu_clock(int n) {
+  static int budget = 0;
+
+  budget+=n;
+
+  while(budget>0) {
+    int c = step6502();
+
+    for(int j=0; j < c; j++) {
+      sid_clock();
+      //cia_clock();
+    }
+
+    budget -=c;
+  }
+}
+
+
+
+
+/**
+ * Lookup table for expanding 4 bits to 16bit
+ */
+unsigned int bit_map_lut[] = {
+0x0000,0x1000,0x0100,0x1100,
+0x0010,0x1010,0x0110,0x1110,
+0x0001,0x1001,0x0101,0x1101,
+0x0011,0x1011,0x0111,0x1111,
+};
+
+
+static inline void eight_pixels2c( uint32_t*p, uint8_t data,int color1, int color0) {
+  uint32_t c = (bit_map_lut[data & 0xF]) <<16;
+  c |= bit_map_lut[data>>4 ];
+  uint32_t c1 = c*color0;
+  uint32_t c0 = (c ^ 0x11111111)*color1;
+
+  *p = (c1 | c0);
+}
+
+
+
+
+static inline void emit_border_pixels(uint32_t* p,int count) {
+  int color0 = vic_regs[BO_COLOR] & 0xF;
+  cpu_clock(count);
+  for(int j=0; j <count; j++) {
+    *p++ = 0x11111111*color0;
+  }
+}
+
+
+static inline void mode0(uint32_t* p,int BA,int VCBASE, int RC) {
+  //Active screen area
+  for (int j = 0; j < 40; j++) {
+    int color0,color1,color2,color3;
+    uint8_t g_data;
+
+    if(BA) {
+      video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j];
+    }
+
+    //This is c-data bits
+    uint8_t D = video_ram[j] & 0xFF; //8 bits
+    uint8_t bit_color = (video_ram[j] >> 8); //4bits
+
+    //BMM=0,MCM=0,ECM=0
+
+    //Text mode
+    //Read Pixels
+    g_data = c_ptr_p[(D << 3) | RC];
+    color1 = bit_color;
+    color0 = vic_regs[BG_COLOR0];
+
+    eight_pixels2c(p,g_data ,color0, color1); p++;
+
+    if(BA) {
+      //cia_clock();
+      sid_clock();
+    } else {
+      cpu_clock(1);
+    }
+  }
+}
+
+void
+vic_line(int line, uint32_t* pixels_p)
+{
+  RASTER_Y = line;
+
+  for(int i=0; i < 64; i++) cia_clock();
+
+  //Is this line within the 200 visible lines
+  if (RASTER_Y >= first_line && RASTER_Y <= last_line)
+  {
+    //Bad line condition
+    int RC = (line + YSCROLL) & 7;
+    int BA = (RC == 0);
+    int VCBASE = ((line + YSCROLL - first_line)/8) * 40;
+
+    //Leading 12 cycles
+    emit_border_pixels(pixels_p,12);
+
+    mode0(pixels_p+ 12,BA,VCBASE,RC);
+    //Lagging 12 cycles
+    emit_border_pixels(pixels_p+(40+12),12);
+  }
+  else
+  {
+    //Full line
+    emit_border_pixels(pixels_p,64);
+  }
+
+  //Interrupt handling
+  if (RST == RASTER_Y)
+  {
+    //printf("VIC Raster watch %i %i\n",RST,vic_regs[IRQ_EN]);
+    vic_regs[IRQ] |= 0x01;
+    if (vic_regs[IRQ_EN] & 1)
+    {
+      vic_regs[IRQ] |= 0x80;
+      irq6502();
+    }
+  }
+
+}
+
+void vic_translate_line(int line,uint32_t* line_buf) {
+  for(int i=0; i < 64; i++) {
+    pixelbuf[line][8*i+0] = rgb_palette[ (line_buf[i] >>0) & 0xF ];
+    pixelbuf[line][8*i+1] = rgb_palette[ (line_buf[i] >>4) & 0xF ];
+    pixelbuf[line][8*i+2] = rgb_palette[ (line_buf[i] >>8) & 0xF ];
+    pixelbuf[line][8*i+3] = rgb_palette[ (line_buf[i] >>12) & 0xF ];
+    pixelbuf[line][8*i+4] = rgb_palette[ (line_buf[i] >>16) & 0xF ];
+    pixelbuf[line][8*i+5] = rgb_palette[ (line_buf[i] >>20) & 0xF ];
+    pixelbuf[line][8*i+6] = rgb_palette[ (line_buf[i] >>24) & 0xF ];
+    pixelbuf[line][8*i+7] = rgb_palette[ (line_buf[i] >>28) & 0xF ];
+  }
 }

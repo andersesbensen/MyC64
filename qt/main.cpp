@@ -45,20 +45,28 @@ public:
     emit update_audio();
   }
 
+  void stop( ) {
+    running = 0;
+    wait();
+  }
+
 signals:
   void update();
   void update_audio();
 
 protected:
   void run() {
+    running = 1;
     c64_init();
 
-    while(1) {
+    while(running) {
       pix_buf_lock.lock();
       c65_run_frame();
       pix_buf_lock.unlock();
     }
   }
+
+  int running;
 };
 
 
@@ -109,12 +117,16 @@ class Window : public QMainWindow
 
   }
 
+  ~Window() {
+    c64.stop();
+  }
+
   private slots:
   void update_screen() {
-    pix_buf_lock.lock();
-    QImage screen ((uchar*)pixelbuf,512,403,QImage::Format_RGBA8888);
+    //pix_buf_lock.lock();
+    QImage screen ((uchar*)pixelbuf,512,312,QImage::Format_RGBA8888);
     label->setPixmap(QPixmap::fromImage(screen));
-    pix_buf_lock.unlock();
+    //pix_buf_lock.unlock();
     update();
   }
 

@@ -334,7 +334,9 @@ indx()
   uint16_t eahelp;
   eahelp = (uint16_t) (((uint16_t)  (op_fectch >> 8) & 0xFF + (uint16_t) x) & 0xFF); //zero-page wraparound for table pointer
   pc++;
-  ea = (uint16_t) read6502(eahelp & 0x00FF) | ((uint16_t) read6502((eahelp + 1) & 0x00FF) << 8);
+  //ea = (uint16_t) read6502(eahelp & 0x00FF) | ((uint16_t) read6502((eahelp + 1) & 0x00FF) << 8);
+  ea = pla_read32(eahelp-2) >> 16;
+
 }
 
 static void
@@ -342,8 +344,10 @@ indy()
 { // (indirect),Y
   uint16_t eahelp, eahelp2, startpage;
   eahelp = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
-  eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //zero-page wraparound
-  ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
+  //eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //zero-page wraparound
+
+  ea = pla_read32(eahelp-2) >> 16;
+  //ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
   startpage = ea & 0xFF00;
   ea += (uint16_t) y;
 
@@ -1163,7 +1167,9 @@ nmi6502()
   push16(pc);
   push8(status);
   status |= FLAG_INTERRUPT;
-  pc = (uint16_t) read6502(0xFFFA) | ((uint16_t) read6502(0xFFFB) << 8);
+  pc = pla_read32(0xFFFA - 2) >> 16;
+
+  //  pc = (uint16_t) read6502(0xFFFA) | ((uint16_t) read6502(0xFFFB) << 8);
 }
 
 void
@@ -1174,7 +1180,9 @@ irq6502()
     push16(pc);
     push8(status);
     status |= FLAG_INTERRUPT;
-    pc = (uint16_t) read6502(0xFFFE) | ((uint16_t) read6502(0xFFFF) << 8);
+
+    //pc = (uint16_t) read6502(0xFFFE) | ((uint16_t) read6502(0xFFFF) << 8);
+    pc = pla_read32(0xFFFE - 2) >> 16;
   }
 }
 
@@ -1192,6 +1200,9 @@ step6502()
   op_fectch = pla_read32(pc);
   opcode = op_fectch & 0xFF;
 
+  if(opcode != read6502(pc)) {
+    printf("%x ! : %8x %8x\n",pc,op_fectch, read6502(pc));
+  }
   pc++;
 
   status |= FLAG_CONSTANT;

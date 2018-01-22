@@ -44,21 +44,6 @@ uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 
 ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 
-typedef enum
-{
-  RAM, BASICROM, IO, KERNALROM, CHARROM
-} mem_dev_t;
-
-const mem_dev_t area_map[8][3] =
-  {
-    { RAM, RAM, RAM },
-    { RAM, CHARROM, RAM },
-    { RAM, CHARROM, KERNALROM },
-    { BASICROM, CHARROM, KERNALROM },
-    { RAM, RAM, RAM },
-    { RAM, IO, RAM },
-    { RAM, IO, KERNALROM },
-    { BASICROM, IO, KERNALROM } };
 
 #ifndef __arm__
 void c64_load_prg(const char* file) {
@@ -79,152 +64,181 @@ void c64_load_prg(const char* file) {
 #endif
 
 
-static inline mem_dev_t
-addr_to_dev(uint16_t address)
-{
-  int bank = (ram[1] & 7);
-  if (address >= 0xA000 && address < 0xC000)
-  {
-    return area_map[bank][0];
-  }else if ((address & 0xF000)== 0xD000)
-  {
-    //dbg_printf("IO area %i %i\n",bank,area_map[bank][1]);
-    return area_map[bank][1];
-  } else if (address >= 0xE000)
-  {
-    return area_map[bank][2];
-  }
-  else
-  {
-    return RAM;
+
+
+static uint8_t** map;
+static uint8_t* memory_layouts[8][16] = {
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)&ram[0xD000],(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000] ,(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000] ,(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000] ,(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&ram[0xE000],(uint8_t*)&ram[0xF000],
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000] ,(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000] ,(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000] ,(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000],
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],  //B
+    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000], //F
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)&ram[0xD000],(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)0           ,(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
+    (uint8_t*)&ram[0xC000],(uint8_t*)0           ,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
+    },
+
+    {
+    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
+    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
+    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],  //B
+    (uint8_t*)&ram[0xC000],           (uint8_t*)0,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000], //F
+    }
+};
+
+int32_t pla_read32(int address) {
+
+  int page = (address >>12) & 0xF;
+  int sub_addr=address& 0xFFF;
+
+  if(sub_addr > 0xFFC) {
+    int shift = (address & 3)*8;
+    int mask = (1<<shift)-1;
+
+    uint32_t a =*(uint32_t*)&(map[page][sub_addr]);
+    uint32_t b =*(uint32_t*)&(map[page+1][0]);
+    return (a  & (mask))  | ((b >> (shift)) & ~mask);
+
+  } else {
+    return *(uint32_t*)&(map[page][sub_addr]);
   }
 }
 
-ALL_STATIC uint8_t
+typedef uint8_t (*read_func_t)(uint16_t);
+typedef void (*write_func_t)(uint16_t,uint8_t);
+
+uint8_t color_read(uint16_t address) {
+  return color_ram[address & 0x3FF];
+}
+
+uint8_t cia1_read(uint16_t address) {
+  return cia_reg_read(&cia1, address & 0xF);
+}
+
+uint8_t cia2_read(uint16_t address) {
+  return cia_reg_read(&cia2, address & 0xF);
+}
+
+uint8_t ram_read(uint16_t address) {
+  return memory_layouts[0][0xE][address];
+}
+
+void
+color_write(uint16_t address, uint8_t value)
+{
+  color_ram[address & 0x3FF] = value;
+}
+
+void
+cia1_write(uint16_t address, uint8_t value)
+{
+  cia_reg_write(&cia1, address & 0xF, value);
+}
+
+void
+cia2_write(uint16_t address, uint8_t value)
+{
+  cia_reg_write(&cia2, address & 0xF, value);
+}
+
+void
+ram_write(uint16_t address, uint8_t value)
+{
+  memory_layouts[0][0xE][address] = value;
+}
+
+
+read_func_t io_read[16] =
+    { vic_reg_read,vic_reg_read ,vic_reg_read,vic_reg_read,
+      sid_read    ,sid_read     ,sid_read    ,sid_read,
+      color_read  ,color_read,color_read,color_read,
+      cia1_read, cia2_read,ram_read, ram_read
+};
+
+write_func_t io_write[16] =
+    { vic_reg_write,vic_reg_write ,vic_reg_write,vic_reg_write,
+      sid_write    ,sid_write     ,sid_write    ,sid_write,
+      color_write  ,color_write,color_write,color_write,
+      cia1_write, cia2_write,ram_write, ram_write
+};
+
+
+uint8_t
 read6502(uint16_t address)
 {
-  mem_dev_t dev = addr_to_dev(address);
+  int page = (address >>12) & 0xF;
+  int sub_addr=address& 0xFFF;
 
-  // if( (address == 0xDC00) || (address == 0xDC01) ) {
-
-  if (address == 0x1)
-  {
-    //dbg_printf("PORT read %x\n", ram[1] | (1 << 4) );
-    return ram[1] |PROT_CASETTE_SENSE;
+  uint8_t* ptr=map[page];
+  if(ptr) {
+    return ptr[sub_addr];
+  } else {
+    return io_read[sub_addr>>8](address & 0x3FF);
   }
-  switch (dev)
-  {
-  case RAM:
-    // dbg_printf("Read RAM %4.4x %2.2x\n",address, ram[address]);
-
-    return ram[address & ADDR_MASK ];
-  case BASICROM:
-    return basic_bin[address & 0x1FFF];
-  case IO:
-    if (address < 0xD400)
-    {
-      int value = vic_reg_read(address & 0x3f);
-//      dbg_printf("Read VIC %4.4x %2.2x\n", address, value);
-
-      return value;
-    }
-    else if (address < 0xD800)
-    {
-      //SID
-      return sid_read( address & 0xFF);
-    }
-    else if (address < 0xDC00)
-    {
-      return color_ram[address - 0xD800];
-    }
-    else if (address < 0xdd00)
-    {
-
-      //CIA 1
-      int x = cia_reg_read(&cia1, address & 0xF);
-      //dbg_printf("Read  CIA1 %4.4x %2.2x\n", address, x);
-
-      return x;
-    }
-    else if (address < 0xde00)
-    {
-      //CIA 2
-      int x = cia_reg_read(&cia2, address & 0xF);
-      //dbg_printf("Read  CIA2 %4.4x %2.2x\n", address, x);
-      return x;
-    }
-    return 0;
-  case KERNALROM:
-    //dbg_printf("READ %4.4x\n",address);
-    return kernal_bin[address & 0x1FFF];
-  case CHARROM:
-    return chargen_bin[address & 0xFFF];
-  }
-
   return 0;
 }
 
-ALL_STATIC void
+
+void
 write6502(uint16_t address, uint8_t value)
 {
-  mem_dev_t dev = addr_to_dev(address);
-
-
-  /*if (address == 1 && (value != ram[1]))
+  if (address == 1 && (value != ram[1]))
   {
-    dbg_printf("Banking changed %x\n", value);
-  }*/
-  switch (dev)
-  {
-  /*
-   * If ROM is visible to the CPU during a write procedure, the ROM will
-   * be read but, any data is written to the the underlying RAM. This
-   * principle is particularly significant to understanding how the
-   * I/O registers are addressed.
-   */
-  case BASICROM:
-  case KERNALROM:
-  case CHARROM:
-  case RAM:
+    map = memory_layouts[value & 7];
+  }
 
-    if(address & ~(ADDR_MASK)) {
-      return;
-    }
-    ram[address] = value;
-    return;
-  case IO:
-    if (address < 0xD400)
-    {
-      //dbg_printf("Write VIC %4.4x %2.2x\n",address,value);
-      vic_reg_write(address & 0x3f, value);
-      return;
-    }
-    else if (address < 0xD800)
-    {
-      //SID
-      sid_write(address & 0xFF,  value);
-    }
-    else if (address < 0xDC00)
-    {
-      // dbg_printf("Color RAM addr %4.4x\n",address- 0xD800);
+  int page = (address >>12) & 0xF;
+  int sub_addr=address& 0xFFF;
 
-      color_ram[address & 0x3ff] = value;
-    }
-    else if (address < 0xdd00)
-    {
-      cia_reg_write(&cia1, address & 0xF, value);
 
-      //dbg_printf("Write CIA1 %4.4x %2.2x\n", address, value);
-      //CIA 1
-    }
-    else if (address < 0xde00)
-    {
-      cia_reg_write(&cia2, address & 0xF, value);
+  uint8_t* ptr=map[page];
 
-      //dbg_printf("Write CIA2 %4.4x %2.2x\n", address, value);
-      //CIA 2
-    }
-    return;
+  if(ptr==basic_bin || ptr == kernal_bin) return;
+  if(ptr==&basic_bin[0x1000] || ptr == &kernal_bin[0x1000]) return;
+
+  if( (uint32_t)ptr ) {
+    ptr[sub_addr] = value;
+  } else {
+    return io_write[sub_addr>>8](address & 0x3FF,value);
   }
 }
 
@@ -239,6 +253,7 @@ c64_init()
   ram[0] = 0x2f;
   ram[1] = 0x37;
 
+  map=memory_layouts[7];
   cia_init();
 
   reset6502();
@@ -262,7 +277,7 @@ c65_run_frame()
 {
   //40ms
 
-#define CHUNK_MS 10
+#define CHUNK_MS 20
 #define CLOCKS_PR_CHUNK  (985248) / (1000/CHUNK_MS)
 
 
@@ -275,6 +290,15 @@ c65_run_frame()
 
   int cpu_halt_clocks = 0;
 
+#if 1
+  uint32_t line_buf[64];
+  for(int i=0; i < 312; i++) {
+    vic_line(i,line_buf);
+    vic_translate_line(i,line_buf);
+  }
+  vic_screen_draw_done();
+
+  #else
   for (int i = 0; i < CLOCKS_PR_CHUNK; i++)
   {
     clock_tick++;
@@ -291,6 +315,7 @@ c65_run_frame()
 
     sid_clock();
   }
+#endif
 
 #ifndef __arm__
   gettimeofday(&time2, 0);
