@@ -14,7 +14,7 @@
 
 #include <stdint.h>
 typedef struct {
-  uint16_t value;
+  int value;
   uint16_t latch;
   uint8_t control;
 } cia_timer_t;
@@ -65,7 +65,7 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr);
 /**
  * Return true if edge interrupt occurred.
  */
-void cia_clock();
+void cia_clock(int );
 
 
 

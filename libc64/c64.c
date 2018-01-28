@@ -66,8 +66,8 @@ void c64_load_prg(const char* file) {
 
 
 
-static uint8_t** map;
-static uint8_t* memory_layouts[8][16] = {
+uint8_t** map;
+uint8_t* memory_layouts[8][16] = {
     {
     (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
     (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
@@ -227,20 +227,27 @@ write6502(uint16_t address, uint8_t value)
   }
 
   int page = (address >>12) & 0xF;
-  int sub_addr=address& 0xFFF;
+  int sub_addr=address& 0xFFC;
 
 
   uint8_t* ptr=map[page];
 
   if(ptr==basic_bin || ptr == kernal_bin) return;
   if(ptr==&basic_bin[0x1000] || ptr == &kernal_bin[0x1000]) return;
+  if(ptr==chargen_bin) return;
 
   if( (uint32_t)ptr ) {
-    ptr[sub_addr] = value;
+    int align = (address & 3)*8;
+    uint32_t* v = &ptr[sub_addr];
+
+    *v &= ~(0xFF << align);
+    *v |= value << align;
   } else {
     return io_write[sub_addr>>8](address & 0x3FF,value);
   }
 }
+
+
 
 int clock_tick;
 

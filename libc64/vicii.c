@@ -4,11 +4,18 @@
  *  Created on: Feb 24, 2017
  *      Author: aes
  */
+
+
 #include "vicii.h"
 #include <stdio.h>
+#include <string.h>
 #include "fake6502.h"
 #include "cia.h"
 #include "c64.h"
+
+extern void sid_clock();
+
+uint32_t pixelbuf[312][512];
 
 static uint8_t vic_regs[47];
 
@@ -60,28 +67,6 @@ static uint8_t vic_regs[47];
  7 — yellow  0.75  −1  0                15 — light grey   0.625 0 0
  *
  */
-/*
- * luma values
- 0:0
- 1:0.313
- 2:0.375
- 3:0.5
- 4:0.625
- 5:0.25
- 6:0.75
- 7:1
- */
-/*const uint8_t luma_table[] = {
- 0<<3,7<<3,1<<3,4<<3,2<<3,3<<3,5<<3,6<<3,
- 2<<3,5<<3,3<<3,1<<3,3<<3,6<<3,3<<3,4<<3
- };*/
-
-/*
- * array([ 0.   ,  3.   ,  0.939,  1.875,  1.125,  1.5  ,  0.75 ,  2.25 ,
- 1.125,  0.75 ,  1.5  ,  0.939,  1.407,  2.25 ,  1.407,  1.875])
- */
-const uint8_t luma_table[] =
-  { 0, 24, 8, 16, 8, 16, 8, 16, 8, 8, 16, 8, 8, 16, 8, 16 };
 
 /*
  RSEL|  Display window height   | First line  | Last line
@@ -110,11 +95,6 @@ static int RST; //Raster watch
 static int RASTER_Y;
 static int CYCLE;
 static int X;//X coordinate
-static int VC = 0;
-static int VCBASE = 0;
-static int RC = 0; //Row counter
-static int VMLI = 0; //Video matrix line index
-static int BA; //Bad line
 
 static uint16_t VM; //Videomatrix pointer
 static uint8_t *VM_p; //Videomatrix pointer
@@ -124,7 +104,7 @@ static uint8_t *c_ptr_p; //Character generator
 static uint8_t *c_ptr_bm_p; //Character generator
 
 static int16_t video_ram[40];
-
+static int mode;
 
 typedef struct
 {
@@ -186,34 +166,11 @@ const uint32_t rgb_palette[16] =
   SWAP_UINT32(0x959595FFUL), //light gray
     };
 
-#ifdef __arm__
-extern void arm_sync(int level);
-extern void arm_emit_pixel(int luma,int color);
-extern uint32_t* luma_buffer;
-extern uint32_t* luma_bufferA;
-int luma_count=0;
-#define VSYNC
-#define HSYNC
-void inline EMIT_PIXEL4(int x)
-{
-  luma_count++;
-  if(luma_count == (32/4)) luma_buffer= luma_bufferA;
-  *luma_buffer++ = luma_table[x];
-}
-#define pixelbuf_p luma_buffer
-#define SYNC(x)
-#else
-uint32_t pixelbuf[312][512];
-static uint32_t* pixelbuf_p  ;
-#define VSYNC
-#define HSYNC pixelbuf_p=pixelbuf[RASTER_Y]
-#define EMIT_PIXEL(x) *pixelbuf_p++ = rgb_palette[x]
-#define SYNC(x)
-#endif
 
 /**
  * Read a 14 bit address
  */
+
 static uint8_t*
 vic_ram_read(uint16_t address)
 {
@@ -233,7 +190,7 @@ vic_ram_read(uint16_t address)
   //if (((bank & 1) == 0) && (addr14 >= 0x1000) && (addr14 < 0x2000))
   if (((bank & 1) == 0) && ((addr14 & 0xf000) == 0x1000))
   {
-    return &chargen_bin[address & 0xFFF];
+    return (uint8_t*)&chargen_bin[address & 0xFFF];
   }
   else
   {
@@ -252,8 +209,7 @@ vic_init()
    }*/
   memset(vic_regs, 0, sizeof(vic_regs));
   RASTER_Y = 0;
-  VSYNC;
-  HSYNC;
+
 
 
   VM_p = vic_ram_read(0);
@@ -319,7 +275,7 @@ vic_reg_write(uint16_t address, uint8_t value)
       last_line=246;
     }
     /*printf("RSEL %i\n",RSEL);*/
-
+    mode =  ((value & 0x60) |  MCM) >> 4;
     break;
   case CTRL2:
 #if 0
@@ -333,6 +289,7 @@ vic_reg_write(uint16_t address, uint8_t value)
       last_x= 334;
     }
 #endif
+    mode = (ECM | BMM | (value & 0x10)) >> 4;
     break;
   case RASTER:
     RST &= ~0xFF;
@@ -344,105 +301,8 @@ vic_reg_write(uint16_t address, uint8_t value)
   }
 
   vic_regs[address] = value;
-}
 
-inline void
-emit4_pixels(uint8_t pixel_data, uint8_t color0, uint8_t color1)
-{
-  uint32_t pixels = 0;
-  uint8_t color;
-
-  for (int j = 0; j < 4; j++)
-  {
-    color = (pixel_data >> 1) & 0x1 ? color1 : color0;
-    pixels |= luma_table[color];
-    pixels <<= 8;
-  }
-
-  EMIT_PIXEL4(pixels);
-}
-
-inline void
-emit4_mcpixels(uint8_t pixel_data, uint8_t color0, uint8_t color1, uint8_t color2, uint8_t color3)
-{
-  uint32_t pixels;
-  uint8_t color;
-  for (int j = 0; j < 4; j += 2)
-  {
-    switch ((pixel_data >> j) & 3)
-    {
-    case 0:
-      color = color0;
-      break;
-    case 1:
-      color = color1;
-      break;
-    case 2:
-      color = color2;
-      break;
-    case 3:
-      color = color3;
-      break;
-    }
-
-    pixels |= luma_table[color];
-    pixels <<= 8;
-  }
-
-  EMIT_PIXEL4(pixels);
-  EMIT_PIXEL4(pixels);
-}
-
-/**
- * Each bit in pixel data represent a pixel
- */
-inline void
-emit8_pixels(uint8_t pixel_data, uint8_t color0, uint8_t color1)
-{
-#ifdef __arm__
-  emit4_pixels(pixel_data>>4,color0,color1);
-  emit4_pixels(pixel_data,color0,color1);
-#else
-  for (int j = 0; j < 8; j++)
-  {
-    uint8_t color = (pixel_data << j) & 0x80 ? color1 : color0;
-    EMIT_PIXEL(color);
-  }
-#endif
-}
-
-inline void
-emit8_mcpixels(uint8_t pixel_data, uint8_t color0, uint8_t color1, uint8_t color2, uint8_t color3)
-{
-  uint8_t color;
-
-#ifdef __arm__
-  emit4_mcpixels(pixel_data>>4,color0,color1,color2,color3);
-  emit4_mcpixels(pixel_data,color0,color1,color2,color3);
-#else
-
-  for (int j = 0; j < 8; j += 2)
-  {
-    switch ((pixel_data >> (6 - j)) & 3)
-    {
-    case 0:
-      color = color0;
-      break;
-    case 1:
-      color = color1;
-      break;
-    case 2:
-      color = color2;
-      break;
-    case 3:
-      color = color3;
-      break;
-    }
-
-    EMIT_PIXEL(color);
-    EMIT_PIXEL(color);
-  }
-#endif
+  mode = (ECM | BMM | MCM) >> 4;
 }
 
 uint8_t
@@ -560,199 +420,6 @@ sprite_engine(int i,uint32_t* pixel)
   return stun_cycles;
 }
 
-int
-vic_clock()
-{
-  uint8_t g_data; //8 pixels to be draw in in this cycle
-  int stun_cycles = 0;
-  int color0 = 0;
-  int color1 = 0;
-  int color2 = 0;
-  int color3 = 0;
-
-  if (RASTER_Y < 8 || RASTER_Y > (7 + 43 + 200 + 49) || CYCLE < 10)
-  {
-    //Outside visible area
-
-    pixelbuf_p += 8;
-  }
-  else if (RASTER_Y < (first_line) || RASTER_Y > (last_line) || (X < first_x) || (X> last_x))
-  { //Border
-    //outside screen area
-    color0 = vic_regs[BO_COLOR] & 0xF;
-    emit8_pixels(0, color0, 0);
-  }
-  else
-  { //Display state
-    int multi_color=0;
-    //This is c-data bits
-    uint8_t D = video_ram[VMLI] & 0xFF; //8 bits
-    uint8_t bit_color = (video_ram[VMLI] >> 8) & 0xF; //4bits
-    if (BMM) //Standard bitmap mode (ECM/BMM/MCM=0/1/0)
-    {
-      //Read Pixel
-      g_data = c_ptr_bm_p[(VC << 3) | RC];
-
-      if (MCM && (ECM == 0))
-      {
-        color0 = vic_regs[BG_COLOR0];
-        color1 = (D >> 4) & 0xF;
-        color2 = (D >> 0) & 0xF;
-        color3 = bit_color & 0xF;
-        multi_color = 1;
-      }
-      else if (ECM == 0)
-      {
-        color1 = (D >> 4) & 0xF;
-        color0 = (D >> 0) & 0xF;
-      }
-      else
-      {
-        color0 = 0;
-        color1 = 0;
-      }
-    }
-    else
-    { //Text mode
-      //Read Pixels
-      g_data = c_ptr_p[(D << 3) | RC];
-      if (MCM && (bit_color & 0x8))
-      { //3.7.3.2. Multicolor text mode (ECM/BMM/MCM=0/0/1)
-        color0 = vic_regs[BG_COLOR0];
-        color1 = vic_regs[BG_COLOR1];
-        color2 = vic_regs[BG_COLOR2];
-        color3 = bit_color & 7;
-
-        multi_color = 1;
-      }
-      else
-      {
-        color1 = bit_color;
-        if (ECM)
-        {
-          color0 = (D >> 6) & 3;
-        }
-        else
-        {
-          color0 = vic_regs[BG_COLOR0];
-        }
-      }
-    }
-
-    if (multi_color)
-    {
-      emit8_mcpixels(g_data, color0, color1, color2, color3);
-    }
-    else
-    {
-      emit8_pixels(g_data, color0, color1);
-    }
-
-    /*4. VC and VMLI are incremented after each g-access in display state.*/
-    VC++;
-    VMLI++;
-  }
-
-  /* Draw sprites*/
-  if (vic_regs[SPR_EN])
-  {
-    for (int i = 7; i-- ; )
-    {
-      stun_cycles += sprite_engine(i, pixelbuf_p-8);
-    }
-  }
-
-  /*
-   * In the first phase of cycle 14 of each line, VC is loaded from VCBASE
-   * (VCBASE->VC) and VMLI is cleared. If there is a Bad Line Condition in
-   * this phase, RC is also reset to zero.
-   */
-  if (CYCLE == 14)
-  {
-    VC = VCBASE;
-    VMLI = 0;
-
-    if (BA)
-    {
-      RC = 0;
-    }
-  }
-
-  /*If there is a Bad Line Condition in cycles 12-54, BA is set low and the
-   c-accesses are started. Once started, one c-access is done in the second
-   phase of every clock cycle in the range 15-54. The read data is stored
-   in the video matrix/color line at the position specified by VMLI. These
-   data is internally read from the position specified by VMLI as well on
-   each g-access in display state.*/
-  if (BA && (CYCLE == 12))
-  {
-
-    //If this a "bad line"
-    stun_cycles += 43;
-    for (int j = 0; j < 40; j++)
-    {
-      video_ram[j] = (color_ram[VCBASE + j] << 8) | VM_p[ VCBASE + j];
-    }
-  }
-
-  /* In the first phase of cycle 58, the VIC checks if RC=7. If so, the video
-   logic goes to idle state and VCBASE is loaded from VC (VC->VCBASE). If
-   the video logic is in display state afterwards (this is always the case
-   if there is a Bad Line Condition), RC is incremented.
-   */
-  if (CYCLE == 58)
-  {
-    if (RC == 7)
-    {
-      VCBASE = VC;
-    }
-    RC++;
-  }
-
-  CYCLE++;
-  X = (X + 8) & 0x1ff;
-
-  if (CYCLE == 63)
-  {
-    CYCLE = 0;
-    X=0x194 + 8; //First X-coord of a line
-    /*Check for raster irq*/
-    RASTER_Y++;
-
-    if (RST == RASTER_Y)
-    {
-      //printf("VIC Raster watch %i %i\n",RST,vic_regs[IRQ_EN]);
-      vic_regs[IRQ] |= 0x01;
-      if (vic_regs[IRQ_EN] & 1)
-      {
-        vic_regs[IRQ] |= 0x80;
-        irq6502();
-      }
-    }
-
-    /**
-     *  A Bad Line Condition is given at any arbitrary clock cycle, if at the
-     * negative edge of �0 at the beginning of the cycle RASTER >= $30 and RASTER
-     * <= $f7 and the lower three bits of RASTER are equal to YSCROLL and if the
-     * DEN bit was set during an arbitrary cycle of raster line $30.
-     */
-    BA = ((RASTER_Y >= 0x30) && (RASTER_Y <= 0xf7) && ((RASTER_Y & 7) == YSCROLL));
-
-    HSYNC;
-
-    if (RASTER_Y == number_of_lines)
-    {
-      vic_screen_draw_done();
-      RASTER_Y = 0;
-      VCBASE = 0;
-      VSYNC;
-    }
-  }
-
-  return stun_cycles;
-}
-
-
 static void cpu_clock(int n) {
   static int budget = 0;
 
@@ -794,6 +461,18 @@ static inline void eight_pixels2c( uint32_t*p, uint8_t data,int color1, int colo
 }
 
 
+static inline void eight_pixels4c( uint32_t*p, uint8_t data,uint8_t color_lut[]) {
+  uint32_t c;
+
+  c  = color_lut[(data>>6) & 3];
+  c |= color_lut[(data>>4) & 3]<<8;
+  c |= color_lut[(data>>2) & 3]<<16;
+  c |= color_lut[(data>>0) & 3]<<24;
+  c |= c<<4;
+
+  *p = c;
+}
+
 
 
 static inline void emit_border_pixels(uint32_t* p,int count) {
@@ -805,45 +484,109 @@ static inline void emit_border_pixels(uint32_t* p,int count) {
 }
 
 
-static inline void mode0(uint32_t* p,int BA,int VCBASE, int RC) {
-  //Active screen area
-  for (int j = 0; j < 40; j++) {
-    int color0,color1,color2,color3;
-    uint8_t g_data;
+#define MODE_FUN(n,core) \
+static void mode##n(uint32_t* p,int VCBASE, int RC) { \
+  for (int j = 0; j < 40; j++) { \
+    int color0,color1; \
+    uint8_t g_data; \
+    int VC = VCBASE+j; \
+\
+  uint8_t D = video_ram[j] & 0xFF; \
+  uint8_t bit_color = (video_ram[j] >> 8);  \
+  core \
+      cpu_clock(1); \
+  } \
+} \
+static void mode_ba##n(uint32_t* p,int VCBASE, int RC) { \
+  for (int j = 0; j < 40; j++) { \
+    int color0,color1; \
+    uint8_t g_data; \
+    int VC = VCBASE+j; \
+                    \
+      video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j]; \
+\
+  uint8_t D = video_ram[j] & 0xFF; \
+  uint8_t bit_color = (video_ram[j] >> 8);  \
+  core \
+  sid_clock(); \
+  } \
+}
 
-    if(BA) {
-      video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j];
-    }
 
-    //This is c-data bits
-    uint8_t D = video_ram[j] & 0xFF; //8 bits
-    uint8_t bit_color = (video_ram[j] >> 8); //4bits
-
-    //BMM=0,MCM=0,ECM=0
-
+MODE_FUN(0,
     //Text mode
     //Read Pixels
     g_data = c_ptr_p[(D << 3) | RC];
     color1 = bit_color;
     color0 = vic_regs[BG_COLOR0];
-
     eight_pixels2c(p,g_data ,color0, color1); p++;
+);
 
-    if(BA) {
-      //cia_clock();
-      sid_clock();
-    } else {
-      cpu_clock(1);
-    }
-  }
-}
+
+MODE_FUN(1,
+    //Multicolor text mode
+  g_data = c_ptr_p[(D << 3) | RC];
+  uint8_t colors[4];
+  colors[0] =vic_regs[BG_COLOR0];
+  colors[1] =vic_regs[BG_COLOR1];
+  colors[2] =vic_regs[BG_COLOR2];
+  colors[3] =bit_color & 7;
+  eight_pixels4c(p,g_data ,colors); p++;
+);
+
+MODE_FUN(2,
+  //Bitmap mode
+  g_data = c_ptr_bm_p[(VC << 3) | RC];
+
+  color1 = (D >> 4) & 0xF;
+  color0 = (D >> 0) & 0xF;
+  eight_pixels2c(p,g_data ,color0, color1); p++;
+);
+
+MODE_FUN(3,
+  //Multicolor Bitmap mode
+  g_data = c_ptr_bm_p[(VC << 3) | RC];
+
+  uint8_t colors[4];
+  colors[0] =vic_regs[BG_COLOR0];
+  colors[1] = (D >> 4) & 0xF;
+  colors[2] = (D >> 0) & 0xF;
+  colors[3] =bit_color & 0xF;
+
+  eight_pixels4c(p,g_data ,colors); p++;
+);
+
+MODE_FUN(4,
+    //ECM Text mode
+    //Read Pixels
+    g_data = c_ptr_p[(D << 3) | RC];
+    color1 = bit_color;
+    color0 = (D >> 6) & 3;;
+    eight_pixels2c(p,g_data ,color0, color1); p++;
+);
+
+MODE_FUN(5,
+    //ECM invalid
+    eight_pixels2c(p,0 ,0, 0); p++;
+);
+
+typedef void (*core_fun_t)(uint32_t* p,int VCBASE, int RC);
+
+core_fun_t mode_funs[] = {
+    mode0,mode1,mode2,mode3,mode4,mode5,mode5,mode5,
+};
+
+core_fun_t mode_funs_ba[] = {
+    mode_ba0,mode_ba1,mode_ba2,mode_ba3,mode_ba4,mode_ba5,mode_ba5,mode_ba5,
+};
+
 
 void
 vic_line(int line, uint32_t* pixels_p)
 {
   RASTER_Y = line;
 
-  for(int i=0; i < 64; i++) cia_clock();
+  cia_clock(63);
 
   //Is this line within the 200 visible lines
   if (RASTER_Y >= first_line && RASTER_Y <= last_line)
@@ -854,22 +597,27 @@ vic_line(int line, uint32_t* pixels_p)
     int VCBASE = ((line + YSCROLL - first_line)/8) * 40;
 
     //Leading 12 cycles
-    emit_border_pixels(pixels_p,12);
+    emit_border_pixels(pixels_p,11);
 
-    mode0(pixels_p+ 12,BA,VCBASE,RC);
+    if(BA) {
+      mode_funs_ba[mode](pixels_p+ 11,VCBASE,RC);
+    } else {
+      mode_funs[mode](pixels_p+ 11,VCBASE,RC);
+    }
+
+//    mode0(pixels_p+ 11,BA,VCBASE,RC);
     //Lagging 12 cycles
-    emit_border_pixels(pixels_p+(40+12),12);
+    emit_border_pixels(pixels_p+(40+11),12);
   }
   else
   {
     //Full line
-    emit_border_pixels(pixels_p,64);
+    emit_border_pixels(pixels_p,63);
   }
 
   //Interrupt handling
   if (RST == RASTER_Y)
   {
-    //printf("VIC Raster watch %i %i\n",RST,vic_regs[IRQ_EN]);
     vic_regs[IRQ] |= 0x01;
     if (vic_regs[IRQ_EN] & 1)
     {
@@ -892,3 +640,4 @@ void vic_translate_line(int line,uint32_t* line_buf) {
     pixelbuf[line][8*i+7] = rgb_palette[ (line_buf[i] >>28) & 0xF ];
   }
 }
+

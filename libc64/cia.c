@@ -143,17 +143,17 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
 }
 
 
-static int cia_clock_timer(cia_timer_t *t) {
+static int cia_clock_timer(cia_timer_t *t,int n) {
   if(t->control & 1) {
     if((t->control & 0x20)) //SP count or CNT
     {
       //TODO
-      t->value--;
+      t->value-=n;
     } else {
-      t->value--;
+      t->value-=n;
     }
 
-    if(t->value ==0) { //Underflow
+    if(t->value <=0) { //Underflow
       if((t->control & 8)==0) { //Reload
 //        printf("Reload\n");
         t->value = t->latch;
@@ -166,9 +166,9 @@ static int cia_clock_timer(cia_timer_t *t) {
   return 0;
 }
 
-static void __cia_clock(cia_t* cia) {
+static void __cia_clock(cia_t* cia,int n) {
 
-  if( cia_clock_timer(&cia->t[0] )){
+  if( cia_clock_timer(&cia->t[0],n )){
    dbg_print("TimerA underflow latch %i\n",cia->t[0].latch);
 
     cia->IRQ |= 1;
@@ -183,7 +183,7 @@ static void __cia_clock(cia_t* cia) {
     }
   }
 
-  if(cia_clock_timer(&cia->t[1])){
+  if(cia_clock_timer(&cia->t[1],n)){
     dbg_print("TimerB underflow latch %i\n",cia->t[1].latch);
 
     cia->IRQ |= 2;
@@ -200,9 +200,9 @@ static void __cia_clock(cia_t* cia) {
   }
 }
 
-void cia_clock() {
-  __cia_clock(&cia1);
-  __cia_clock(&cia2);
+void cia_clock(int n) {
+  __cia_clock(&cia1,n);
+  __cia_clock(&cia2,n);
 }
 
 void cia_init() {
