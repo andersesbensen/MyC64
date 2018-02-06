@@ -170,12 +170,12 @@ const uint32_t rgb_palette[16] =
 /**
  * Read a 14 bit address
  */
-
+extern uint8_t* memory_layouts[8][16];
 static uint8_t*
 vic_ram_read(uint16_t address)
 {
   uint8_t bank;
-  uint16_t addr14 = address; // & 0x3FFF;
+  uint16_t addr14 = address ;//& 0x3FFF;
 
   bank = (~cia2.PRA) & 3;
 
@@ -195,8 +195,8 @@ vic_ram_read(uint16_t address)
   else
   {
     int final_addr = (bank << 14) | (addr14);
-
-    return &ram[final_addr & ADDR_MASK];
+    //printf("final addr %8x bank %i\n", final_addr,bank);
+    return &memory_layouts[0][(final_addr>>12)&0xF][final_addr & 0xFFF];
   }
 }
 
@@ -211,10 +211,17 @@ vic_init()
   RASTER_Y = 0;
 
 
+  VM = 0;
+  c_ptr=0;
+  vic_update_ptrs();
+}
 
-  VM_p = vic_ram_read(0);
-  c_ptr_p = vic_ram_read(0);
-  c_ptr_bm_p = vic_ram_read(0);
+
+void vic_update_ptrs() {
+  //printf("New pointers %8x %8x\n",VM,c_ptr);
+  VM_p = vic_ram_read(VM);
+  c_ptr_p = vic_ram_read(c_ptr);
+  c_ptr_bm_p = vic_ram_read(c_ptr & 0x2000);
 }
 
 void
@@ -256,10 +263,7 @@ vic_reg_write(uint16_t address, uint8_t value)
     VM= ((value >> 4) & 0xF) << 10; //1K block
     c_ptr = ((value >> 1) & 0x7) << 11; //2K block
 
-    VM_p = vic_ram_read(VM);
-    c_ptr_p = vic_ram_read(c_ptr);
-    c_ptr_bm_p = vic_ram_read(c_ptr & 0x2000);
-
+    vic_update_ptrs();
     //printf("Raster line %i\n",RASTER_Y);
   }
     break;
@@ -300,9 +304,8 @@ vic_reg_write(uint16_t address, uint8_t value)
     return;
   }
 
-  vic_regs[address] = value;
 
-  mode = (ECM | BMM | MCM) >> 4;
+  vic_regs[address] = value;
 }
 
 uint8_t
@@ -527,11 +530,18 @@ MODE_FUN(1,
     //Multicolor text mode
   g_data = c_ptr_p[(D << 3) | RC];
   uint8_t colors[4];
-  colors[0] =vic_regs[BG_COLOR0];
-  colors[1] =vic_regs[BG_COLOR1];
-  colors[2] =vic_regs[BG_COLOR2];
-  colors[3] =bit_color & 7;
-  eight_pixels4c(p,g_data ,colors); p++;
+  if( bit_color & 8) {
+    colors[0] =vic_regs[BG_COLOR0];
+    colors[1] =vic_regs[BG_COLOR1];
+    colors[2] =vic_regs[BG_COLOR2];
+    colors[3] =bit_color & 7;
+    eight_pixels4c(p,g_data ,colors);
+    p++;
+  } else {
+    color0 = vic_regs[BG_COLOR0];
+    color1 = bit_color;
+    eight_pixels2c(p,g_data ,color0, color1); p++;
+  }
 );
 
 MODE_FUN(2,
@@ -560,8 +570,8 @@ MODE_FUN(4,
     //ECM Text mode
     //Read Pixels
     g_data = c_ptr_p[(D << 3) | RC];
-    color1 = bit_color;
     color0 = (D >> 6) & 3;;
+    color1 = bit_color;
     eight_pixels2c(p,g_data ,color0, color1); p++;
 );
 
@@ -584,30 +594,35 @@ core_fun_t mode_funs_ba[] = {
 void
 vic_line(int line, uint32_t* pixels_p)
 {
-  RASTER_Y = line;
+  RASTER_Y = (line);
 
   cia_clock(63);
 
+  if(line ==0) {
+   // printf("Mode %3i YSCROLL %3i c_ptr %4x VM_ptr %4x CSEL %i\n",mode,YSCROLL, c_ptr,VM,CSEL);
+    //fflush(stdout);
+  }
   //Is this line within the 200 visible lines
-  if (RASTER_Y >= first_line && RASTER_Y <= last_line)
+  //if ((RASTER_Y >= first_line) && RASTER_Y <= (last_line))
+  if ((RASTER_Y >= first_line) && RASTER_Y <= (last_line))
   {
     //Bad line condition
-    int RC = (line + YSCROLL) & 7;
+    int display_line = line+YSCROLL;
+    int RC = (display_line) & 7;
     int BA = (RC == 0);
-    int VCBASE = ((line + YSCROLL - first_line)/8) * 40;
+    int VCBASE = ((display_line-first_line+YSCROLL)/8) * 40;
 
     //Leading 12 cycles
-    emit_border_pixels(pixels_p,11);
+    emit_border_pixels(pixels_p,12);
 
     if(BA) {
-      mode_funs_ba[mode](pixels_p+ 11,VCBASE,RC);
+      mode_funs_ba[mode](pixels_p+ 12,VCBASE,RC);
     } else {
-      mode_funs[mode](pixels_p+ 11,VCBASE,RC);
+      mode_funs[mode](pixels_p+ 12,VCBASE,RC);
     }
 
-//    mode0(pixels_p+ 11,BA,VCBASE,RC);
     //Lagging 12 cycles
-    emit_border_pixels(pixels_p+(40+11),12);
+    emit_border_pixels(pixels_p+(40+12),11);
   }
   else
   {

@@ -45,84 +45,82 @@ uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
 ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 
 
-#ifndef __arm__
-void c64_load_prg(const char* file) {
-  FILE*f;
-  uint16_t offset;
 
-  f = fopen(file,"rb");
-  fseek(f, 0L, SEEK_END);
-  size_t sz = ftell(f);
-  fseek(f, 0L, SEEK_SET);
+#define RAM0 (uint8_t*)&ram[0x0000]
+#define RAM1 (uint8_t*)&ram[0x1000]
+#define RAM2 (uint8_t*)&ram[0x2000]
+#define RAM3 (uint8_t*)&ram[0x3000]
+#define RAM4 (uint8_t*)&ram[0x4000]
+#define RAM5 (uint8_t*)&ram[0x5000]
+#define RAM6 (uint8_t*)&ram[0x6000]
+#define RAM7 (uint8_t*)&ram[0x7000]
+#define RAM8 (uint8_t*)&ram[0x8000]
+#define RAM9 (uint8_t*)&ram[0x9000]
+#define RAMA (uint8_t*)&ram[0xA000]
+#define RAMB (uint8_t*)&ram[0xB000]
+#define RAMC (uint8_t*)&ram[0xC000]
+#define RAMD (uint8_t*)&ram[0xD000]
+#define RAME (uint8_t*)&ram[0xE000]
+#define RAMF (uint8_t*)&ram[0xF000]
 
-  fread(&offset,2,1,f);
-
-  dbg_printf("Program file size is %zU\n",sz);
-  fread(&ram[offset],sz-2,1,f);
-  fclose(f);
-}
-#endif
-
-
-
-
-uint8_t** map;
+static uint8_t** map;
 uint8_t* memory_layouts[8][16] = {
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)&ram[0xD000],(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    { //bank 0
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,RAMD,RAME,RAMF,
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000] ,(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000] ,(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000] ,(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&ram[0xE000],(uint8_t*)&ram[0xF000],
+    { //bank 1
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,(uint8_t*)&chargen_bin[0x0000],RAME,RAMF,
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000] ,(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000] ,(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000] ,(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000],
+    { //bank 2
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],  //B
-    (uint8_t*)&ram[0xC000],(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000], //F
+    { //bank 3
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],
+        RAMC,(uint8_t*)&chargen_bin[0x0000],(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)&ram[0xD000],(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    { //bank 4
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,RAMD,RAME,RAMF,
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)0           ,(uint8_t*)&ram[0xE000],       (uint8_t*)&ram[0xF000],
+    { //bank 5
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,0,   RAME,RAMF,
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&ram[0xA000],       (uint8_t*)&ram[0xB000],
-    (uint8_t*)&ram[0xC000],(uint8_t*)0           ,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
+    { //bank 6
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,RAMA,RAMB,
+        RAMC,0,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
     },
 
-    {
-    (uint8_t*)&ram[0x0000],(uint8_t*)&ram[0x1000],(uint8_t*)&ram[0x2000],       (uint8_t*)&ram[0x3000],
-    (uint8_t*)&ram[0x4000],(uint8_t*)&ram[0x5000],(uint8_t*)&ram[0x6000],       (uint8_t*)&ram[0x7000],
-    (uint8_t*)&ram[0x8000],(uint8_t*)&ram[0x9000],(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],  //B
-    (uint8_t*)&ram[0xC000],           (uint8_t*)0,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000], //F
-    }
+    { //bank 7
+        RAM0,RAM1,RAM2,RAM3,
+        RAM4,RAM5,RAM6,RAM7,
+        RAM8,RAM9,(uint8_t*)&basic_bin[0x0000], (uint8_t*)&basic_bin[0x1000],
+        RAMC,0,(uint8_t*)&kernal_bin[0x0000],(uint8_t*)&kernal_bin[0x1000]
+    },
+
 };
 
 int32_t pla_read32(int address) {
@@ -223,6 +221,7 @@ write6502(uint16_t address, uint8_t value)
 {
   if (address == 1 && (value != ram[1]))
   {
+    printf("bank %i\n",value & 7);
     map = memory_layouts[value & 7];
   }
 
@@ -242,6 +241,7 @@ write6502(uint16_t address, uint8_t value)
 
     *v &= ~(0xFF << align);
     *v |= value << align;
+    //ptr[address&0xFFF] = value;;
   } else {
     return io_write[sub_addr>>8](address & 0x3FF,value);
   }
@@ -278,6 +278,37 @@ c64_key_press(int key, int state)
     }
   }
 }
+
+
+
+#ifndef __arm__
+void c64_load_prg(const char* file) {
+  FILE*f;
+  uint16_t offset;
+  uint8_t buffer[0x10000];
+
+  f = fopen(file,"rb");
+  fseek(f, 0L, SEEK_END);
+  size_t sz = ftell(f);
+  fseek(f, 0L, SEEK_SET);
+
+  fread(&offset,2,1,f);
+
+  dbg_printf("Program file size is %zU\n",sz);
+  fread(buffer,sz-2,1,f);
+
+  printf("Writing from %6x to  %6x\n", offset,offset+sz-2);
+
+  for(int i=0; i < sz-2; i++) {
+    int addr = offset + i;
+    uint8_t* ptr = (uint8_t*)memory_layouts[0][addr >> 12];
+    ptr[addr & 0xFFF] = buffer[i];
+    //write6502(offset+i,buffer[i]);
+  }
+  //fread(&ram[offset],sz-2,1,f);
+  fclose(f);
+}
+#endif
 
 void
 c65_run_frame()

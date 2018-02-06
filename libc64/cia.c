@@ -26,6 +26,7 @@ void cia_reg_write(cia_t* cia,uint16_t addr, uint8_t value) {
   switch(addr) {
   case 0:
     cia->PRA = value;
+    vic_update_ptrs();
     break;
   case 1:
     cia->PRB = value;

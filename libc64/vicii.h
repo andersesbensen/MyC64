@@ -20,6 +20,6 @@ uint8_t vic_reg_read(uint16_t address);
 int vic_clock();
 
 void vic_line(int line, uint32_t* pixels_p);
-
+void vic_update_ptrs();
 
 #endif /* TESTAPPLICATIONS_MYC64_VICII_H_ */
