@@ -69,10 +69,6 @@ static uint8_t vic_regs[47];
  */
 
 /*
- RSEL|  Display window height   | First line  | Last line
- ----+--------------------------+-------------+----------
- 0 | 24 text lines/192 pixels |   55 ($37)  | 246 ($f6)
- 1 | 25 text lines/200 pixels |   51 ($33)  | 250 ($fa)
 
  CSEL|   Display window width   | First X coo. | Last X coo.
  ----+--------------------------+--------------+------------
@@ -271,6 +267,12 @@ vic_reg_write(uint16_t address, uint8_t value)
     RST &= ~0x100;
     RST |= (value & 0x80) << 1;
 
+    /*
+    RSEL|  Display window height   | First line  | Last line
+    ----+--------------------------+-------------+----------
+    0 | 24 text lines/192 pixels |   55 ($37)  | 246 ($f6)
+    1 | 25 text lines/200 pixels |   51 ($33)  | 250 ($fa)
+    */
     if(RSEL) {
       first_line=51;
       last_line=250;
@@ -278,11 +280,13 @@ vic_reg_write(uint16_t address, uint8_t value)
       first_line = 55;
       last_line=246;
     }
-    /*printf("RSEL %i\n",RSEL);*/
+    //printf("RSEL %i YSCROLL %i %02x\n",RSEL,YSCROLL,vic_regs[CTRL1]);
     mode =  ((value & 0x60) |  MCM) >> 4;
     break;
   case CTRL2:
-#if 0
+    //printf("CSEL=%i XSCROLL=%i\n",CSEL,XSCROLL);
+
+    #if 0
     printf("CSEL=%i XSCROLL=%i\n",CSEL,XSCROLL);
 
     if(CSEL) {
@@ -293,7 +297,6 @@ vic_reg_write(uint16_t address, uint8_t value)
       last_x= 334;
     }
 #endif
-    mode = (ECM | BMM | (value & 0x10)) >> 4;
     break;
   case RASTER:
     RST &= ~0xFF;
@@ -304,7 +307,7 @@ vic_reg_write(uint16_t address, uint8_t value)
     return;
   }
 
-
+  mode = (ECM | BMM | MCM)>>4;
   vic_regs[address] = value;
 }
 
@@ -430,12 +433,6 @@ static void cpu_clock(int n) {
 
   while(budget>0) {
     int c = step6502();
-
-    for(int j=0; j < c; j++) {
-      sid_clock();
-      //cia_clock();
-    }
-
     budget -=c;
   }
 }
@@ -506,12 +503,10 @@ static void mode_ba##n(uint32_t* p,int VCBASE, int RC) { \
     uint8_t g_data; \
     int VC = VCBASE+j; \
                     \
-      video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j]; \
 \
   uint8_t D = video_ram[j] & 0xFF; \
   uint8_t bit_color = (video_ram[j] >> 8);  \
   core \
-  sid_clock(); \
   } \
 }
 
@@ -591,32 +586,53 @@ core_fun_t mode_funs_ba[] = {
 };
 
 
+static int DENlatch = 0;
+static int VCBASE;
 void
 vic_line(int line, uint32_t* pixels_p)
 {
+  //Bad line condition
+
   RASTER_Y = (line);
-
   cia_clock(63);
+  //for(int j=0; j < 63; j++) {
+    sid_clock();
+  //}
+//  cpu.vic.badline = (cpu.vic.denLatch && (r >= 0x30) && (r <= 0xf7) && ( (r & 0x07) == cpu.vic.YSCROLL));
 
-  if(line ==0) {
-   // printf("Mode %3i YSCROLL %3i c_ptr %4x VM_ptr %4x CSEL %i\n",mode,YSCROLL, c_ptr,VM,CSEL);
-    //fflush(stdout);
+
+  if (line == 0x30 ) {
+    VCBASE=0;
+    DENlatch = DEN;
   }
+
+
+
+
+ /* if( ((line-YSCROLL) & 7)==0) {
+    printf("Bad line %x fist_line %x\n",line,first_line);
+  }*/
+
   //Is this line within the 200 visible lines
-  //if ((RASTER_Y >= first_line) && RASTER_Y <= (last_line))
-  if ((RASTER_Y >= first_line) && RASTER_Y <= (last_line))
+
+//  if (DENlatch && (RASTER_Y >= first_line) && RASTER_Y <= (last_line))
+  if (DENlatch && (RASTER_Y >= 0x30) && (RASTER_Y <= 0xf7))
   {
-    //Bad line condition
-    int display_line = line+YSCROLL;
-    int RC = (display_line) & 7;
+    int RC = (RASTER_Y-YSCROLL) & 7;
     int BA = (RC == 0);
-    int VCBASE = ((display_line-first_line+YSCROLL)/8) * 40;
+
+    if(BA) {
+      for(int j=0; j < 40; j++) {
+        video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j]; \
+      }
+    }
 
     //Leading 12 cycles
     emit_border_pixels(pixels_p,12);
 
     if(BA) {
       mode_funs_ba[mode](pixels_p+ 12,VCBASE,RC);
+      VCBASE+= 40;
     } else {
       mode_funs[mode](pixels_p+ 12,VCBASE,RC);
     }

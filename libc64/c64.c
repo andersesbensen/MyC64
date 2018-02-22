@@ -12,7 +12,8 @@
 #include "sys/time.h"
 #include "c64.h"
 #include "tape.h"
-#include "sid_wrapper.h"
+//#include "sid_wrapper.h"
+#include "mysid.h"
 #include <unistd.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -59,6 +60,11 @@ ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 #define RAMA (uint8_t*)&ram[0xA000]
 #define RAMB (uint8_t*)&ram[0xB000]
 #define RAMC (uint8_t*)&ram[0xC000]
+
+/*#define RAMD (uint8_t*)&ram[0x0000]
+#define RAME (uint8_t*)&ram[0x1000]
+#define RAMF (uint8_t*)&ram[0x2000]
+*/
 #define RAMD (uint8_t*)&ram[0xD000]
 #define RAME (uint8_t*)&ram[0xE000]
 #define RAMF (uint8_t*)&ram[0xF000]
@@ -215,25 +221,34 @@ read6502(uint16_t address)
   return 0;
 }
 
-
+int page_touch=0;
 void
 write6502(uint16_t address, uint8_t value)
 {
+  uint8_t* ptr;
+
   if (address == 1 && (value != ram[1]))
   {
-    printf("bank %i\n",value & 7);
+    //printf("bank %i\n",value & 7);
     map = memory_layouts[value & 7];
   }
 
   int page = (address >>12) & 0xF;
   int sub_addr=address& 0xFFC;
 
+  ptr=map[page];
 
-  uint8_t* ptr=map[page];
-
-  if(ptr==basic_bin || ptr == kernal_bin) return;
-  if(ptr==&basic_bin[0x1000] || ptr == &kernal_bin[0x1000]) return;
-  if(ptr==chargen_bin) return;
+  /*
+   * If ROM is visible to the CPU during a write procedure, the ROM will
+   * be read but, any data is written to the the underlying RAM. This
+   * principle is particularly significant to understanding how the
+   * I/O registers are addressed.
+   */
+  if((ptr==basic_bin || ptr == kernal_bin) ||
+    (ptr==&basic_bin[0x1000] || ptr == &kernal_bin[0x1000]) ||
+    (ptr==chargen_bin)) {
+    ptr=memory_layouts[0][page];
+  }
 
   if( (uint32_t)ptr ) {
     int align = (address & 3)*8;
@@ -241,6 +256,10 @@ write6502(uint16_t address, uint8_t value)
 
     *v &= ~(0xFF << align);
     *v |= value << align;
+
+
+    page_touch |= 1<<page;
+
     //ptr[address&0xFFF] = value;;
   } else {
     return io_write[sub_addr>>8](address & 0x3FF,value);
@@ -294,6 +313,7 @@ void c64_load_prg(const char* file) {
 
   fread(&offset,2,1,f);
 
+  page_touch=0;
   dbg_printf("Program file size is %zU\n",sz);
   fread(buffer,sz-2,1,f);
 

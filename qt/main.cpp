@@ -25,9 +25,13 @@ extern "C"
 #include <QMimeData>
 #include <QAudioOutput>
 #include <QBuffer>
-
+/*
 extern "C" {
  #include "sid_wrapper.h"
+}*/
+
+extern "C" {
+ #include "mysid.h"
 }
 
 QMutex pix_buf_lock;
