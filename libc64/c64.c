@@ -69,6 +69,9 @@ ALL_STATIC uint8_t ram[NUM_4K_BLOCKS*4096];
 #define RAME (uint8_t*)&ram[0xE000]
 #define RAMF (uint8_t*)&ram[0xF000]
 
+
+
+
 static uint8_t** map;
 uint8_t* memory_layouts[8][16] = {
     { //bank 0
@@ -140,7 +143,9 @@ int32_t pla_read32(int address) {
 
     uint32_t a =*(uint32_t*)&(map[page][sub_addr]);
     uint32_t b =*(uint32_t*)&(map[page+1][0]);
-    return (a  & (mask))  | ((b >> (shift)) & ~mask);
+
+    printf("Cross at %08x %08x %08x \n",address,a,b);
+    return (a  & (mask))  | ((b << (shift)) & ~mask);
 
   } else {
     return *(uint32_t*)&(map[page][sub_addr]);
@@ -206,9 +211,19 @@ write_func_t io_write[16] =
 };
 
 
+extern int tape_sense;
 uint8_t
 read6502(uint16_t address)
 {
+
+  if(address ==1) {
+    if(tape_sense) {
+      return map[0][1] | PROT_CASETTE_SENSE;
+    } else {
+      return map[0][1] & ~PROT_CASETTE_SENSE;
+    }
+  }
+
   int page = (address >>12) & 0xF;
   int sub_addr=address& 0xFFF;
 
@@ -231,6 +246,8 @@ write6502(uint16_t address, uint8_t value)
   {
     //printf("bank %i\n",value & 7);
     map = memory_layouts[value & 7];
+   /* printf("PORT0 %x\n",value);
+    printf("DRIVE %s\n", value & PROT_CASETTE_CTRL ? "off" : "on");*/
   }
 
   int page = (address >>12) & 0xF;
@@ -244,6 +261,7 @@ write6502(uint16_t address, uint8_t value)
    * principle is particularly significant to understanding how the
    * I/O registers are addressed.
    */
+
   if((ptr==basic_bin || ptr == kernal_bin) ||
     (ptr==&basic_bin[0x1000] || ptr == &kernal_bin[0x1000]) ||
     (ptr==chargen_bin)) {
@@ -251,17 +269,17 @@ write6502(uint16_t address, uint8_t value)
   }
 
   if( (uint32_t)ptr ) {
-    int align = (address & 3)*8;
+   /* int align = (address & 3)*8;
     uint32_t* v = &ptr[sub_addr];
 
     *v &= ~(0xFF << align);
     *v |= value << align;
-
-
+*/
     page_touch |= 1<<page;
 
-    //ptr[address&0xFFF] = value;;
+    ptr[address&0xFFF] = value;;
   } else {
+    //printf("IO write %04x %02x\n", address,value);
     return io_write[sub_addr>>8](address & 0x3FF,value);
   }
 }
@@ -273,6 +291,8 @@ int clock_tick;
 void
 c64_init()
 {
+  printf("C64 init\n");
+
   vic_init();
   sid_init();
   memset(ram, 0, sizeof(ram));
@@ -284,6 +304,8 @@ c64_init()
 
   reset6502();
   clock_tick = 0;
+  sid_clock();
+
 }
 void
 c64_key_press(int key, int state)

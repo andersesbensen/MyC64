@@ -228,74 +228,66 @@ reset6502()
 
 typedef void
 (*void_func_t)();
-typedef int
-(*addr_func_t)();
 
-static const addr_func_t addrtable[256];
+static const void_func_t addrtable[256];
 static const void_func_t optable[256];
 
 uint8_t penaltyop, penaltyaddr;
 
 //addressing mode functions, calculates effective addresses
-static int
+static void
 imp()
 { //implied
-  return -1;
 }
 
-static int
+static void
 acc()
 { //accumulator
-  return -1;
 }
 
-static int
+static void
 imm()
 { //immediate
-  return  pc++;
+  ea = pc++;
 }
 
-static int
+static void
 zp()
 { //zero-page
-  pc++;
-  return (uint16_t) (op_fectch >> 8) & 0xFF;
+  ea = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
 }
 
-static int
+static void
 zpx()
 { //zero-page,X
-  return ((uint16_t) read6502((uint16_t) pc++) + (uint16_t) x) & 0xFF; //zero-page wraparound
+  ea = ((uint16_t) read6502((uint16_t) pc++) + (uint16_t) x) & 0xFF; //zero-page wraparound
 }
 
-static int
+static void
 zpy()
 { //zero-page,Y
-  return ((uint16_t) read6502((uint16_t) pc++) + (uint16_t) y) & 0xFF; //zero-page wraparound
+  ea = ((uint16_t) read6502((uint16_t) pc++) + (uint16_t) y) & 0xFF; //zero-page wraparound
 }
 
-static int
+static void
 rel()
 { //relative for branch ops (8-bit immediate value, sign-extended)
   reladdr = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
 
   if (reladdr & 0x80)
     reladdr |= 0xFF00;
-
-  return -1;
 }
 
-static int
+static void
 abso()
 { //absolute
+  ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   pc += 2;
-  return  (uint16_t) (op_fectch >> 8) & 0xFFFF;
 }
 
-static int
+static void
 absx()
 { //absolute,X
-  uint16_t ea;
   uint16_t startpage;
   ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   startpage = ea & 0xFF00;
@@ -307,13 +299,11 @@ absx()
   }
 
   pc += 2;
-  return ea;
 }
 
-static int
+static void
 absy()
 { //absolute,Y
-  uint16_t ea;
   uint16_t startpage;
   ea = (uint16_t) (op_fectch >> 8) & 0xFFFF;
   startpage = ea & 0xFF00;
@@ -323,41 +313,37 @@ absy()
   { //one cycle penlty for page-crossing on some opcodes
     penaltyaddr = 1;
   }
+
   pc += 2;
-  return ea;
 }
 
-static int
+static void
 ind()
 { //indirect
   uint16_t eahelp, eahelp2;
   eahelp = (uint16_t) (op_fectch >> 8) & 0xFFFF;
 
   eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //replicate 6502 page-boundary wraparound bug
+  ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
   pc += 2;
-  return (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
 }
 
-static int
+static void
 indx()
 { // (indirect,X)
   uint16_t eahelp;
   eahelp = (uint16_t) (((uint16_t)  (op_fectch >> 8) & 0xFF + (uint16_t) x) & 0xFF); //zero-page wraparound for table pointer
   pc++;
-  //ea = (uint16_t) read6502(eahelp & 0x00FF) | ((uint16_t) read6502((eahelp + 1) & 0x00FF) << 8);
-  return pla_read32(eahelp-2) >> 16;
+  ea = (uint16_t) read6502(eahelp & 0x00FF) | ((uint16_t) read6502((eahelp + 1) & 0x00FF) << 8);
 }
 
-static int
+static void
 indy()
 { // (indirect),Y
-  uint16_t ea;
   uint16_t eahelp, eahelp2, startpage;
   eahelp = (uint16_t) (op_fectch >> 8) & 0xFF; pc++;
-  //eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //zero-page wraparound
-
-  ea = pla_read32(eahelp-2) >> 16;
-  //ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
+  eahelp2 = (eahelp & 0xFF00) | ((eahelp + 1) & 0x00FF); //zero-page wraparound
+  ea = (uint16_t) read6502(eahelp) | ((uint16_t) read6502(eahelp2) << 8);
   startpage = ea & 0xFF00;
   ea += (uint16_t) y;
 
@@ -365,7 +351,6 @@ indy()
   { //one cycle penlty for page-crossing on some opcodes
     penaltyaddr = 1;
   }
-  return ea;
 }
 
 static uint16_t
@@ -1108,7 +1093,7 @@ rra()
 
 //#define USE_OP_SWITCH
 #ifndef USE_OP_SWITCH
-static const addr_func_t addrtable[256] =
+static const void_func_t addrtable[256] =
 {
   /*        |  0  |  1  |  2  |  3  |  4  |  5  |  6  |  7  |  8  |  9  |  A  |  B  |  C  |  D  |  E  |  F  |     */
   /* 0 */imp, indx, imp, indx, zp, zp, zp, zp, imp, imm, acc, imm, abso, abso, abso, abso, /* 0 */
@@ -1178,9 +1163,7 @@ nmi6502()
   push16(pc);
   push8(status);
   status |= FLAG_INTERRUPT;
-  pc = pla_read32(0xFFFA - 2) >> 16;
-
-  //  pc = (uint16_t) read6502(0xFFFA) | ((uint16_t) read6502(0xFFFB) << 8);
+  pc = (uint16_t) read6502(0xFFFA) | ((uint16_t) read6502(0xFFFB) << 8);
 }
 
 void
@@ -1191,9 +1174,7 @@ irq6502()
     push16(pc);
     push8(status);
     status |= FLAG_INTERRUPT;
-
-    //pc = (uint16_t) read6502(0xFFFE) | ((uint16_t) read6502(0xFFFF) << 8);
-    pc = pla_read32(0xFFFE - 2) >> 16;
+    pc = (uint16_t) read6502(0xFFFE) | ((uint16_t) read6502(0xFFFF) << 8);
   }
 }
 
@@ -1211,9 +1192,6 @@ step6502()
   op_fectch = pla_read32(pc);
   opcode = op_fectch & 0xFF;
 
-  if(opcode != read6502(pc)) {
-    printf("%x ! : %8x %8x\n",pc,op_fectch, read6502(pc));
-  }
   pc++;
 
   status |= FLAG_CONSTANT;
@@ -1223,9 +1201,7 @@ step6502()
 #ifdef USE_OP_SWITCH
 #include "optable_gen.c"
 #else
-  int effective_address = (*addrtable[opcode])();
-  ea = effective_address;
-
+  (*addrtable[opcode])();
   (*optable[opcode])();
 #endif
   clockticks6502 += ticktable[opcode];
