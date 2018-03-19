@@ -131,9 +131,9 @@ key_matrix(int keycode)
     return 057;
 
     //row6
-  case Qt::Key_sterling: //(pound)
+  case '$': //(pound)
     return 060;
-  case '*': //asterisk
+  case '\'': //asterisk
     return 061;
   case ';': // (semicolon)
     return 062;

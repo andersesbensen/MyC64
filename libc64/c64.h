@@ -14,7 +14,7 @@
 #endif
 
 #include<stdint.h>
-
+#include"tape.h"
 
 #ifdef __arm__
 #define NUM_4K_BLOCKS 6

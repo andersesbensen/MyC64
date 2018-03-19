@@ -357,7 +357,7 @@ c65_run_frame()
 {
   //40ms
 
-#define CHUNK_MS 20
+#define CHUNK_MS (20)
 #define CLOCKS_PR_CHUNK  (985248) / (1000/CHUNK_MS)
 
 

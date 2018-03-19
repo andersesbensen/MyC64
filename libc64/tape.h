@@ -12,7 +12,7 @@
 
 
 void open_tape(const char* file);
-void tape_cycle();
+void tape_cycle(int n);
 int tape_data();
 
 #endif /* TAPE_H_ */

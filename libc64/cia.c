@@ -26,7 +26,7 @@ void cia_reg_write(cia_t* cia,uint16_t addr, uint8_t value) {
   switch(addr) {
   case 0:
     cia->PRA = value;
-    vic_update_ptrs();
+    if(cia == &cia2)vic_update_ptrs();
     break;
   case 1:
     cia->PRB = value;
@@ -143,21 +143,22 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
   }
 }
 
-
+#include <stdio.h>
 static int cia_clock_timer(cia_timer_t *t,int n) {
   if(t->control & 1) {
     if((t->control & 0x20)) //SP count or CNT
     {
       //TODO
+      printf ("Timer TODO\n");
       t->value-=n;
     } else {
       t->value-=n;
     }
 
-    if(t->value <=0) { //Underflow
+    if(t->value<=0) { //Underflow
       if((t->control & 8)==0) { //Reload
-//        printf("Reload\n");
-        t->value = t->latch;
+        //printf("Reload\n");
+        t->value += t->latch;
       } else {
         t->control &= ~1; //Disable
       }

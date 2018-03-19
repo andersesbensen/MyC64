@@ -17,7 +17,7 @@ extern "C"
 #include <QLabel>
 #include <QThread>
 #include <QGraphicsScene>
-#include <QTimer.h>
+#include <QTimer>
 #include <stdint.h>
 #include <QKeyEvent>
 #include <QMutex>
@@ -83,6 +83,7 @@ extern "C" void vic_screen_draw_done() {
 
 extern "C" void sid_audio_ready(int16_t* data, int n) {
   memcpy(audio_buffer,data,n*sizeof(int16_t));
+
   the_c64->audio_ready();
 }
 
@@ -104,15 +105,17 @@ class Window : public QMainWindow
 
     QAudioFormat format;
 
-    format.setSampleRate(44100);
+    format.setSampleRate(15625);
+    //format.setSampleRate(44100);
     format.setChannelCount(1);
     format.setSampleSize(16);
     format.setCodec("audio/pcm");
     format.setByteOrder(QAudioFormat::LittleEndian);
     format.setSampleType(QAudioFormat::SignedInt);
 
+    memset(audio_buffer,0,sizeof(audio_buffer));
     m_audioOutput = new QAudioOutput(format, this);
-    m_audioOutput->setBufferSize(SAMPLE_BUFFER_SIZE*2);
+    m_audioOutput->setBufferSize(sizeof(audio_buffer)*2);
     m_audio_buffer = m_audioOutput->start( );
     m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
 
@@ -163,7 +166,11 @@ class Window : public QMainWindow
        // extract the local paths of the files
        for (int i = 0; i < urlList.size() && i < 32; ++i)
        {
-         c64_load_prg(urlList.at(i).toLocalFile().toStdString().c_str());
+         QString filename = urlList.at(i).toLocalFile();
+         if(filename.endsWith(".prg")) c64_load_prg(filename.toStdString().c_str());
+         if(filename.endsWith(".tap")) open_tape(filename.toStdString().c_str());
+
+
          break;
        }
      }

@@ -1190,6 +1190,16 @@ step6502()
   clockticks6502 = 0;
 
   op_fectch = pla_read32(pc);
+
+  uint32_t xx;
+  xx = read6502(pc);
+  xx |= read6502(pc+1)<<8;
+  xx |= read6502(pc+2)<<16;
+  xx |= read6502(pc+3)<<24;
+
+  if(op_fectch != xx) {
+    printf("%08x  !=  %08x \n",op_fectch,xx);
+  }
   opcode = op_fectch & 0xFF;
 
   pc++;

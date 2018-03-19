@@ -17,7 +17,7 @@ extern void sid_clock();
 
 uint32_t pixelbuf[312][512];
 
-static uint8_t vic_regs[47];
+static uint8_t vic_regs[64];
 
 #define MSBsX  0x10
 #define CTRL1  0x11
@@ -191,8 +191,8 @@ vic_ram_read(uint16_t address)
   else
   {
     int final_addr = (bank << 14) | (addr14);
-    //printf("final addr %8x bank %i\n", final_addr,bank);
-    return &memory_layouts[0][(final_addr>>12)&0xF][final_addr & 0xFFF];
+//    printf("final addr %8x bank %i\n", final_addr,bank);
+    return &(memory_layouts[0][(final_addr>>12)&0xF][final_addr & 0xFFF]);
   }
 }
 
@@ -214,16 +214,17 @@ vic_init()
 
 
 void vic_update_ptrs() {
-  //printf("New pointers %8x %8x\n",VM,c_ptr);
   VM_p = vic_ram_read(VM);
   c_ptr_p = vic_ram_read(c_ptr);
   c_ptr_bm_p = vic_ram_read(c_ptr & 0x2000);
+
+//  printf("VM =%04x cptr = %04x at line %i\n",VM,c_ptr,RASTER_Y);
 }
 
 void
 vic_reg_write(uint16_t address, uint8_t value)
 {
-
+  address = address &0x3f;
   /*if (value != vic_regs[address])
    {
    printf("VIC reg write %4.4x = %4.4x\n", address, value);
@@ -281,7 +282,6 @@ vic_reg_write(uint16_t address, uint8_t value)
       last_line=246;
     }
     //printf("RSEL %i YSCROLL %i %02x\n",RSEL,YSCROLL,vic_regs[CTRL1]);
-    mode =  ((value & 0x60) |  MCM) >> 4;
     break;
   case CTRL2:
     //printf("CSEL=%i XSCROLL=%i\n",CSEL,XSCROLL);
@@ -307,8 +307,10 @@ vic_reg_write(uint16_t address, uint8_t value)
     return;
   }
 
-  mode = (ECM | BMM | MCM)>>4;
   vic_regs[address] = value;
+
+  mode = (ECM | BMM | MCM)>>4;
+
 }
 
 uint8_t
@@ -433,6 +435,11 @@ static void cpu_clock(int n) {
 
   while(budget>0) {
     int c = step6502();
+
+
+    tape_cycle(c);
+    cia_clock(c);
+
     budget -=c;
   }
 }
@@ -476,8 +483,10 @@ static inline void eight_pixels4c( uint32_t*p, uint8_t data,uint8_t color_lut[])
 
 
 static inline void emit_border_pixels(uint32_t* p,int count) {
-  int color0 = vic_regs[BO_COLOR] & 0xF;
+
   cpu_clock(count);
+  int color0 = vic_regs[BO_COLOR] & 0xF;
+
   for(int j=0; j <count; j++) {
     *p++ = 0x11111111*color0;
   }
@@ -492,20 +501,19 @@ static void mode##n(uint32_t* p,int VCBASE, int RC) { \
     int VC = VCBASE+j; \
 \
   uint8_t D = video_ram[j] & 0xFF; \
-  uint8_t bit_color = (video_ram[j] >> 8);  \
-  core \
+  uint8_t bit_color = (video_ram[j] >> 8) & 0xF;  \
+      core \
       cpu_clock(1); \
-  } \
+} \
 } \
 static void mode_ba##n(uint32_t* p,int VCBASE, int RC) { \
   for (int j = 0; j < 40; j++) { \
     int color0,color1; \
     uint8_t g_data; \
     int VC = VCBASE+j; \
-                    \
 \
   uint8_t D = video_ram[j] & 0xFF; \
-  uint8_t bit_color = (video_ram[j] >> 8);  \
+  uint8_t bit_color = (video_ram[j] >> 8) &0xF;  \
   core \
   } \
 }
@@ -542,16 +550,15 @@ MODE_FUN(1,
 MODE_FUN(2,
   //Bitmap mode
   g_data = c_ptr_bm_p[(VC << 3) | RC];
-
   color1 = (D >> 4) & 0xF;
   color0 = (D >> 0) & 0xF;
   eight_pixels2c(p,g_data ,color0, color1); p++;
 );
 
 MODE_FUN(3,
+
   //Multicolor Bitmap mode
   g_data = c_ptr_bm_p[(VC << 3) | RC];
-
   uint8_t colors[4];
   colors[0] =vic_regs[BG_COLOR0];
   colors[1] = (D >> 4) & 0xF;
@@ -592,71 +599,65 @@ void
 vic_line(int line, uint32_t* pixels_p)
 {
   //Bad line condition
-
   RASTER_Y = (line);
-  cia_clock(63);
-  //for(int j=0; j < 63; j++) {
-    sid_clock();
-  //}
-//  cpu.vic.badline = (cpu.vic.denLatch && (r >= 0x30) && (r <= 0xf7) && ( (r & 0x07) == cpu.vic.YSCROLL));
 
+/*
+ * The test for reaching the interrupt raster line is done in cycle 0 of every line
+ */
+  //Interrupt handling
+  if (RST == RASTER_Y)
+  {
+    vic_regs[IRQ] |= 0x01;
+  }
+
+  if(vic_regs[IRQ] & vic_regs[IRQ_EN] & 0xf) {
+    vic_regs[IRQ] |= 0x80;
+    irq6502();
+  } else {
+    vic_regs[IRQ] &= 0xf;
+  }
+
+//  for(int i=0; i <63; i++) {
+//    tape_cycle();
+ // }
+//  cia_clock(63);
+  sid_clock();
 
   if (line == 0x30 ) {
     VCBASE=0;
     DENlatch = DEN;
   }
 
+  int RC = (RASTER_Y-YSCROLL) & 7;
+  int BA = (RC == 0)  && (RASTER_Y >= 0x30) && (RASTER_Y <= 0xf7) ;
 
+  //Leading 12 cycles
+  emit_border_pixels(pixels_p,12);
 
+  if(BA && DENlatch ) {
+    uint8_t* v = vic_ram_read(VM|VCBASE );
 
- /* if( ((line-YSCROLL) & 7)==0) {
-    printf("Bad line %x fist_line %x\n",line,first_line);
-  }*/
+    for(int j=0; j < 40; j++) {
+      video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) |v[j];
+    }
+    mode_funs_ba[mode](pixels_p+ 12,VCBASE,RC);
+    tape_cycle(40);
+    cia_clock(40);
 
-  //Is this line within the 200 visible lines
-
-//  if (DENlatch && (RASTER_Y >= first_line) && RASTER_Y <= (last_line))
-  if (DENlatch && (RASTER_Y >= 0x30) && (RASTER_Y <= 0xf7))
+  } else if ( (RASTER_Y >= first_line) && (RASTER_Y <= last_line) && DENlatch)
   {
-    int RC = (RASTER_Y-YSCROLL) & 7;
-    int BA = (RC == 0);
 
-    if(BA) {
-      for(int j=0; j < 40; j++) {
-        video_ram[j] = ((color_ram[VCBASE + j] << 8) & 0xF00) | VM_p[ VCBASE + j]; \
-      }
-    }
-
-    //Leading 12 cycles
-    emit_border_pixels(pixels_p,12);
-
-    if(BA) {
-      mode_funs_ba[mode](pixels_p+ 12,VCBASE,RC);
-      VCBASE+= 40;
-    } else {
-      mode_funs[mode](pixels_p+ 12,VCBASE,RC);
-    }
-
-    //Lagging 12 cycles
-    emit_border_pixels(pixels_p+(40+12),11);
+    mode_funs[mode](pixels_p+ 12,VCBASE,RC);
+    if(RC==7)  VCBASE+=40;
   }
   else
   {
     //Full line
-    emit_border_pixels(pixels_p,63);
+    emit_border_pixels(pixels_p+12,40);
   }
 
-  //Interrupt handling
-  if (RST == RASTER_Y)
-  {
-    vic_regs[IRQ] |= 0x01;
-    if (vic_regs[IRQ_EN] & 1)
-    {
-      vic_regs[IRQ] |= 0x80;
-      irq6502();
-    }
-  }
-
+  //Lagging 11 cycles
+  emit_border_pixels(pixels_p+(40+12),11);
 }
 
 void vic_translate_line(int line,uint32_t* line_buf) {
