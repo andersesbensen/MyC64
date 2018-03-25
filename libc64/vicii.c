@@ -80,6 +80,8 @@ const int screen_width = 320;
 const int screen_height = 200;
 const int cycles_per_line = 63;
 const int number_of_lines = 312;
+static int cpu_budget = 0;
+
 int first_line = 51;
 int last_line = 250;
 int first_x = 24;
@@ -89,8 +91,8 @@ const int visible_pixels = 403;
 
 static int RST; //Raster watch
 static int RASTER_Y;
-static int CYCLE;
-static int X;//X coordinate
+static int DENlatch = 0;
+static int VCBASE;
 
 static uint16_t VM; //Videomatrix pointer
 static uint8_t *VM_p; //Videomatrix pointer
@@ -104,17 +106,14 @@ static int mode;
 
 typedef struct
 {
-  uint8_t MC; //"MC" (MOB Data Counter) is a 6 bit counter that can be loaded from MCBASE.
   uint16_t MCBASE; //"MCBASE" (MOB Data Counter Base) is a 6 bit counter with reset input.
   int X;
   int Y;
-  uint32_t pixels;
 } sprite_state_t;
 
 static sprite_state_t sprites[8];
 
 extern uint8_t color_ram[1024]; //0.5KB SRAM (1K*4 bit) Color RAM
-extern uint8_t ram[NUM_4K_BLOCKS * 4096];
 extern const unsigned char chargen_bin[];
 
 /*extern uint8_t read6502(uint16_t address);
@@ -330,117 +329,20 @@ vic_reg_read(uint16_t address)
   }
 }
 
-static int
-sprite_engine(int i,uint32_t* pixel)
-{
-  sprite_state_t* s = &sprites[i];
-  int stun_cycles = 0;
-  /*In the first phases of cycle 55 and 56, the VIC checks for every sprite
-   if the corresponding MxE bit in register $d015 is set and the Y
-   coordinate of the sprite (odd registers $d001-$d00f) match the lower 8
-   bits of RASTER. If this is the case and the DMA for the sprite is still
-   off, the DMA is switched on, MCBASE is cleared, and if the MxYE bit is
-   set the expansion flip flip is reset.*/
-  if ((CYCLE == 55) && (vic_regs[SPR_EN] & (1 << i)) && (s->Y == (RASTER_Y & 0xFF)))
-  {
-    s->MCBASE = 0;
-  }
 
-  /*
-   *  In the first phase of cycle 58, the MC of every sprite is loaded from
-   *  its belonging MCBASE (MCBASE->MC) and it is checked if the DMA for the
-   *  sprite is turned on and the Y coordinate of the sprite matches the lower
-   *  8 bits of RASTER. If this is the case, the display of the sprite is
-   *  turned on.
-   */
-  if ((s->X>>3) == (X>>3) && (s->MCBASE < 63))
-  {
-
-    //printf("x %3i: %3i \n",i,s->X);
-    //uint16_t MP = *vic_ram_read(VM | 0x3f8 | i)<<6; //8 bits
-    uint16_t MP =VM_p[0x3f8 | i]<<6; //8 bits
-
-    s->pixels =  *vic_ram_read( MP  | (s->MCBASE + 0)) << 24;
-    s->pixels |= *vic_ram_read( MP  | (s->MCBASE + 1)) << 16;
-    s->pixels |= *vic_ram_read( MP  | (s->MCBASE + 2)) << 8;
-
-    // There are 4 accesses here, one data pointer access and 3 pixel data, two accesses pr cycle gives two cycles.
-    stun_cycles+=2;
-    s->MCBASE += 3;
-    s->pixels = s->pixels >> (s->X & 7);
-  }
-
-  if ( s->pixels )
-  {
-    // printf("%i %i %i %08x\n", X,s->X/8+10,X - s->X/8, s->pixels);
-    //Check multicolor
-    if (vic_regs[MxMC] & (1 << i))
-    {
-      for (int j = 0; j < 8; j += 2)
-      {
-        uint8_t color;
-        switch ( s->pixels & 0xc0000000)
-        {
-        case 0:
-          color = 0xFF; //Transparent
-          break;
-        case 1<<30: //Sprite multicolor 0 ($d025)
-          color = vic_regs[0x25];
-          break;
-        case 2<<30: //Sprite color ($d027-$d02e)
-          color = vic_regs[0x27 + i];
-          break;
-        case 3<<30: //Sprite multicolor 1 ($d026)
-          color = vic_regs[0x26];
-          break;
-        }
-
-        if(color !=0xFF) {
-          *pixel++ = rgb_palette[color];
-          *pixel++ = rgb_palette[color];
-        } else {
-          pixel+=2;
-        }
-        if(((vic_regs[MxXE] & (1<<i)) == 0) || (j&1)  ) {
-          s->pixels <<= 2;
-        }
-      }
-    }
-    else
-    {
-      uint8_t color = vic_regs[0x27 + i];
-      for (int j = 0; j < 8; j++)
-      {
-        if (s->pixels & 0x80000000)
-        {
-          *pixel = rgb_palette[color];
-        }
-        pixel++;
-
-        if(((vic_regs[MxXE] & (1<<i)) == 0) || (j&1)  ) {
-          s->pixels = s->pixels<<1;
-        }
-
-      }
-    }
-  }
-
-  return stun_cycles;
-}
 
 static void cpu_clock(int n) {
-  static int budget = 0;
 
-  budget+=n;
+  cpu_budget+=n;
 
-  while(budget>0) {
+  while(cpu_budget>0) {
     int c = step6502();
 
 
     tape_cycle(c);
     cia_clock(c);
 
-    budget -=c;
+    cpu_budget -=c;
   }
 }
 
@@ -468,7 +370,7 @@ static inline void eight_pixels2c( uint32_t*p, uint8_t data,int color1, int colo
 }
 
 
-static inline void eight_pixels4c( uint32_t*p, uint8_t data,uint8_t color_lut[]) {
+static inline void eight_pixels4c( uint32_t*p, uint8_t data,const uint8_t color_lut[]) {
   uint32_t c;
 
   c  = color_lut[(data>>6) & 3];
@@ -593,8 +495,108 @@ core_fun_t mode_funs_ba[] = {
 };
 
 
-static int DENlatch = 0;
-static int VCBASE;
+/**
+ * convert 0xabcd to 0xaabbccdd, TODO this could be faster
+ */
+static inline uint32_t nibble_double(uint16_t x) {
+  uint32_t z=0;
+
+  z |= ((x & 0xf)   <<0 ) ;
+  z |= ((x & 0xf0 ) <<4 ) ;
+  z |= ((x & 0xf00) <<8 ) ;
+  z |= ((x & 0xf000)<<12) ;
+
+  return z | (z<< 4);
+}
+
+static void
+sprite_engine(int i,uint32_t* pixel)
+{
+  const uint8_t mask_colors[4] = {0xF,0,0,0};
+
+  sprite_state_t* s = &sprites[i];
+
+  /*In the first phases of cycle 55 and 56, the VIC checks for every sprite
+   if the corresponding MxE bit in register $d015 is set and the Y
+   coordinate of the sprite (odd registers $d001-$d00f) match the lower 8
+   bits of RASTER. If this is the case and the DMA for the sprite is still
+   off, the DMA is switched on, MCBASE is cleared, and if the MxYE bit is
+   set the expansion flip flip is reset.*/
+  if ((vic_regs[SPR_EN] & (1 << i)) && (s->Y == (RASTER_Y & 0xFF)))
+  {
+    s->MCBASE = 0;
+  }
+
+  if(s->MCBASE>63) return;
+
+  /*
+   *  In the first phase of cycle 58, the MC of every sprite is loaded from
+   *  its belonging MCBASE (MCBASE->MC) and it is checked if the DMA for the
+   *  sprite is turned on and the Y coordinate of the sprite matches the lower
+   *  8 bits of RASTER. If this is the case, the display of the sprite is
+   *  turned on.
+   */
+
+  uint32_t pixel_data;
+  uint16_t MP =VM_p[0x3f8 | i]<<6; //8 bits
+
+  uint8_t *p = vic_ram_read( MP  | (s->MCBASE + 0));
+  pixel_data = (p[0] <<24) | (p[1] <<16) | (p[2] <<8);
+
+  // There are 4 accesses here, one data pointer access and 3 pixel data, two accesses pr cycle gives two cycles.
+  /*cpu_budget -=2;
+  tape_cycle(2);
+  cia_clock(2);*/
+
+  s->MCBASE += 3;
+  pixel_data >>= (s->X & 7);
+
+  //Border X=0 seems to be a cycle 14
+
+  int x = (s->X>>3) + (14-5);
+  if(x > 64 ) x=x-64;
+
+  pixel +=x;
+
+  uint8_t mc_colors[4];
+  mc_colors[0] = 0;
+  mc_colors[1] = vic_regs[0x25];
+  mc_colors[2] = vic_regs[0x27 + i];
+  mc_colors[3] = vic_regs[0x26];
+
+  for(int i =0; i < 4; i++) {
+    uint32_t new_pixels;
+    uint32_t mask;
+
+    if (vic_regs[MxMC] & (1 << i))
+    {
+        eight_pixels4c(&mask,pixel_data>>24 ,mask_colors);;
+        eight_pixels4c(&new_pixels,pixel_data>>24 ,mc_colors);;
+    }
+    else
+    {
+      eight_pixels2c(&mask,pixel_data>>24,0xF, 0x0);
+      new_pixels = ((mc_colors[2]*0x11111111) & (~mask));
+    }
+
+    pixel_data<<=8;
+
+    if(vic_regs[MxXE] & (1<<i)) {
+      *pixel &=  nibble_double((mask) & 0xffff);;
+      *pixel |=  nibble_double((new_pixels) & 0xffff);
+      pixel++;
+
+      mask = nibble_double( (mask>>16) );
+      new_pixels= nibble_double((new_pixels>>16) );
+    }
+
+    *pixel &=  mask;
+    *pixel |=  new_pixels ;
+    pixel++;
+  }
+
+}
+
 void
 vic_line(int line, uint32_t* pixels_p)
 {
@@ -658,18 +660,32 @@ vic_line(int line, uint32_t* pixels_p)
 
   //Lagging 11 cycles
   emit_border_pixels(pixels_p+(40+12),11);
+
+  for(int i=0; i < 8; i++) {
+    sprite_engine(i,pixels_p);
+  }
 }
 
 void vic_translate_line(int line,uint32_t* line_buf) {
+  uint32_t q=0;
+  int n = XSCROLL*4;
+  int mask = (1<<(n)) -1;
+
   for(int i=0; i < 64; i++) {
-    pixelbuf[line][8*i+0] = rgb_palette[ (line_buf[i] >>0) & 0xF ];
-    pixelbuf[line][8*i+1] = rgb_palette[ (line_buf[i] >>4) & 0xF ];
-    pixelbuf[line][8*i+2] = rgb_palette[ (line_buf[i] >>8) & 0xF ];
-    pixelbuf[line][8*i+3] = rgb_palette[ (line_buf[i] >>12) & 0xF ];
-    pixelbuf[line][8*i+4] = rgb_palette[ (line_buf[i] >>16) & 0xF ];
-    pixelbuf[line][8*i+5] = rgb_palette[ (line_buf[i] >>20) & 0xF ];
-    pixelbuf[line][8*i+6] = rgb_palette[ (line_buf[i] >>24) & 0xF ];
-    pixelbuf[line][8*i+7] = rgb_palette[ (line_buf[i] >>28) & 0xF ];
+    uint32_t p = line_buf[i];
+    uint32_t r = p & (mask << (32-n));
+    p = p << n;
+    p |= q;
+    q =  r >> (32-n);
+
+    pixelbuf[line][8*i+0] = rgb_palette[ (p >>0) & 0xF ];
+    pixelbuf[line][8*i+1] = rgb_palette[ (p >>4) & 0xF ];
+    pixelbuf[line][8*i+2] = rgb_palette[ (p >>8) & 0xF ];
+    pixelbuf[line][8*i+3] = rgb_palette[ (p >>12) & 0xF ];
+    pixelbuf[line][8*i+4] = rgb_palette[ (p >>16) & 0xF ];
+    pixelbuf[line][8*i+5] = rgb_palette[ (p >>20) & 0xF ];
+    pixelbuf[line][8*i+6] = rgb_palette[ (p >>24) & 0xF ];
+    pixelbuf[line][8*i+7] = rgb_palette[ (p >>28) & 0xF ];
   }
 }
 

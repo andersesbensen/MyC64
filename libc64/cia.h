@@ -70,6 +70,9 @@ void cia_clock(int );
 
 
 extern uint8_t key_matrix2[8];
+extern uint8_t joystick1;
+extern uint8_t joystick2;
+
 extern cia_t cia1;
 extern cia_t cia2;
 

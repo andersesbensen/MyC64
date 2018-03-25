@@ -90,6 +90,7 @@ extern "C" void sid_audio_ready(int16_t* data, int n) {
 class Window : public QMainWindow
 {
  Q_OBJECT
+
  public:
   Window(QWidget *parent = 0)  {
     label = new QLabel;
@@ -101,11 +102,13 @@ class Window : public QMainWindow
     setFocusPolicy(Qt::StrongFocus);
     the_c64 = &c64;
     c64.start();
-
+    joystick_mode=KEYBOARD;
 
     QAudioFormat format;
 
-    format.setSampleRate(15625);
+    //format.setSampleRate(15625);
+    format.setSampleRate(15625-500);
+
     //format.setSampleRate(44100);
     format.setChannelCount(1);
     format.setSampleSize(16);
@@ -145,11 +148,54 @@ class Window : public QMainWindow
 
 
   protected:
+
+  int getJoystickKey(int code) {
+    switch(code) {
+   case Qt::Key_Up:
+     return 0;
+    case Qt::Key_Down:
+      return 1;
+    case Qt::Key_Left:
+      return 2;
+    case Qt::Key_Right:
+      return 3;
+    case Qt::Key_Space:
+      return 4;
+    default:
+      return -1;
+    }
+  }
+
+
+  void input(QKeyEvent *event, bool state) {
+    switch(joystick_mode) {
+    case KEYBOARD:
+      c64_key_press( key_matrix(event->key()),state);
+      break;
+    case JOY1:
+      c64_joy1_press(getJoystickKey(event->key()), state);
+      break;
+    case JOY2:
+      c64_joy2_press(getJoystickKey(event->key()), state);
+      break;
+    }
+
+  }
   void keyPressEvent(QKeyEvent *event) {
-    c64_key_press( key_matrix(event->key()),1);
+    const char* input_dev[] = {"keyboard","joystick1","joystick2"};
+
+    if(event->key() == Qt::Key_Alt) {
+      joystick_mode = (joystick_mode_t)(joystick_mode + 1);
+
+      if(joystick_mode > JOY2) joystick_mode=KEYBOARD;
+      qDebug("Switched to %s mode", input_dev[joystick_mode]);
+    }
+
+    input(event,true);
+
   }
   void keyReleaseEvent(QKeyEvent *event) {
-    c64_key_press( key_matrix(event->key()),0);
+    input(event,false);
   }
 
 
@@ -199,6 +245,10 @@ class Window : public QMainWindow
  C64 c64;
  QAudioOutput* m_audioOutput;
  QIODevice* m_audio_buffer;
+
+ typedef enum {KEYBOARD,JOY1,JOY2} joystick_mode_t ;
+
+ joystick_mode_t joystick_mode;
 };
 
 

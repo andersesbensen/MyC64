@@ -18,6 +18,9 @@ extern int clock_tick;
 ALL_STATIC cia_t cia1;
 ALL_STATIC cia_t cia2;
 
+uint8_t joystick1 = 0x0;
+uint8_t joystick2 = 0x0;
+
 uint8_t key_matrix2[8];
 
 
@@ -90,10 +93,11 @@ void cia_reg_write(cia_t* cia,uint16_t addr, uint8_t value) {
 
 uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
 
+  //printf("Cia %s read addr %x PRA %x\n", cia->name, addr,cia->PRA);
   switch(addr)
   {
   case 0:
-    return cia->PRA ;
+    return cia->PRA & ~joystick2  ;
   case 1:
     if(cia == &cia1) {
       uint8_t key=0x0;
@@ -102,7 +106,7 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
           key |= key_matrix2[i];
         }
       }
-      return 0xFF & ~key;
+      return 0xFF & ~(key | joystick1);
     } else {
       return cia->PRB;
     }
@@ -146,6 +150,17 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
 #include <stdio.h>
 static int cia_clock_timer(cia_timer_t *t,int n) {
   if(t->control & 1) {
+    if(t->value< 0) { //Underflow
+      if((t->control & 8)==0) { //Reload
+        //printf("Reload\n");
+        t->value += t->latch;
+      } else {
+        t->control &= ~1; //Disable
+        t->value = 0;
+      }
+      return 1;
+    }
+
     if((t->control & 0x20)) //SP count or CNT
     {
       //TODO
@@ -155,15 +170,6 @@ static int cia_clock_timer(cia_timer_t *t,int n) {
       t->value-=n;
     }
 
-    if(t->value<=0) { //Underflow
-      if((t->control & 8)==0) { //Reload
-        //printf("Reload\n");
-        t->value += t->latch;
-      } else {
-        t->control &= ~1; //Disable
-      }
-      return 1;
-    }
   }
   return 0;
 }

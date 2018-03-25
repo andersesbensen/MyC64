@@ -42,6 +42,13 @@ void c64_load_prg(const char* file);
 extern uint32_t pixelbuf[312][512];
 
 
+
+/**
+ * Joysitck key press
+ */
+extern void c64_joy1_press(int key, int state) ;
+extern void c64_joy2_press(int key, int state) ;
+
 extern void vic_screen_draw_done();
 
 #endif /* TESTAPPLICATIONS_MYC64_C64_H_ */

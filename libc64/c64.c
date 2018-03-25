@@ -138,14 +138,11 @@ int32_t pla_read32(int address) {
   int sub_addr=address& 0xFFF;
 
   if(sub_addr > 0xFFC) {
-    int shift = (address & 3)*8;
-    int mask = (1<<shift)-1;
-
-    uint32_t a =*(uint32_t*)&(map[page][sub_addr]);
+    uint32_t a =*(uint32_t*)&(map[page][0xFFC]);
     uint32_t b =*(uint32_t*)&(map[page+1][0]);
-
-    printf("Cross at %08x %08x %08x \n",address,a,b);
-    return (a  & (mask))  | ((b << (shift)) & ~mask);
+    uint64_t c = (uint64_t)b << 32L | a;
+    int shift = (address & 3)*8;
+    return (c >> shift) & 0xffffffff;
 
   } else {
     return *(uint32_t*)&(map[page][sub_addr]);
@@ -307,6 +304,30 @@ c64_init()
   sid_clock();
 
 }
+
+
+void
+c64_joy1_press(int key, int state) {
+
+  if(key<0 || key>4) return;
+  if(state) {
+    joystick1 |= 1<<key;
+  } else {
+    joystick1 &= ~(1<<key);
+  }
+}
+
+void
+c64_joy2_press(int key, int state) {
+
+  if(key<0 || key>4) return;
+  if(state) {
+    joystick2 |= 1<<key;
+  } else {
+    joystick2 &= ~(1<<key);
+  }
+}
+
 void
 c64_key_press(int key, int state)
 {
