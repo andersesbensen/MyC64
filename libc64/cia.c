@@ -97,7 +97,15 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
   switch(addr)
   {
   case 0:
-    return cia->PRA & ~joystick2  ;
+  {
+    uint8_t v = ~cia->DDRA | (cia->PRA & cia->DDRA);
+
+    if(cia == &cia1) {
+      return  v & (~joystick1) ;
+    } else {
+      return v;
+    }
+  }
   case 1:
     if(cia == &cia1) {
       uint8_t key=0x0;
@@ -106,7 +114,7 @@ uint8_t cia_reg_read(cia_t* cia, uint16_t addr) {
           key |= key_matrix2[i];
         }
       }
-      return 0xFF & ~(key | joystick1);
+      return 0xFF & ~(key | joystick2);
     } else {
       return cia->PRB;
     }

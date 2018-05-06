@@ -612,7 +612,7 @@ vic_line(int line, uint32_t* pixels_p)
     vic_regs[IRQ] |= 0x01;
   }
 
-  if(vic_regs[IRQ] & vic_regs[IRQ_EN] & 0xf) {
+  if((vic_regs[IRQ] & vic_regs[IRQ_EN]) & 0xf) {
     vic_regs[IRQ] |= 0x80;
     irq6502();
   } else {
@@ -661,7 +661,13 @@ vic_line(int line, uint32_t* pixels_p)
   //Lagging 11 cycles
   emit_border_pixels(pixels_p+(40+12),11);
 
-  for(int i=0; i < 8; i++) {
+  /* The sprites have a rigid hierarchy among themselves: Sprite 0 has the
+   * highest and sprite 7 the lowest priority. If two sprites overlap, the
+   * sprite with the higher number is displayed only where the other sprite has
+   * a transparent pixel.
+   */
+
+  for(int i=7; i>=0 ; --i) {
     sprite_engine(i,pixels_p);
   }
 }

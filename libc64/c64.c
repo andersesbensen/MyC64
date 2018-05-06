@@ -136,6 +136,7 @@ int32_t pla_read32(int address) {
 
   int page = (address >>12) & 0xF;
   int sub_addr=address& 0xFFF;
+  //printf("read32 Address %04x\n",address);
 
   if(sub_addr > 0xFFC) {
     uint32_t a =*(uint32_t*)&(map[page][0xFFC]);
@@ -226,6 +227,8 @@ read6502(uint16_t address)
 
   uint8_t* ptr=map[page];
   if(ptr) {
+    //printf("read Address %04x val %02x\n",address,ptr[sub_addr]);
+
     return ptr[sub_addr];
   } else {
     return io_read[sub_addr>>8](address & 0x3FF);
@@ -238,6 +241,7 @@ void
 write6502(uint16_t address, uint8_t value)
 {
   uint8_t* ptr;
+  //printf("write Address %04x val %02x\n",address,value);
 
   if (address == 1 && (value != ram[1]))
   {
