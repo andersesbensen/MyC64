@@ -384,54 +384,11 @@ c65_run_frame()
 
 #define CHUNK_MS (20)
 #define CLOCKS_PR_CHUNK  (985248) / (1000/CHUNK_MS)
-
-
-#ifndef __arm__
-  struct timeval time1;
-  struct timeval time2;
-  struct timeval delta;
-  gettimeofday(&time1, 0);
-#endif
-
-  int cpu_halt_clocks = 0;
-
-#if 1
   uint32_t line_buf[64];
   for(int i=0; i < 312; i++) {
     vic_line(i,line_buf);
     vic_translate_line(i,line_buf);
   }
   vic_screen_draw_done();
-
-  #else
-  for (int i = 0; i < CLOCKS_PR_CHUNK; i++)
-  {
-    clock_tick++;
-    if (cpu_halt_clocks == 0)
-    {
-      cpu_halt_clocks = step6502();
-    }
-    cpu_halt_clocks--;
-
-    cpu_halt_clocks += vic_clock();
-
-    cia_clock();
-
-
-    sid_clock();
-  }
-#endif
-
-#ifndef __arm__
-  gettimeofday(&time2, 0);
-
-  timersub(&time2, &time1, &delta);
-
-  if (delta.tv_usec < CHUNK_MS*1000) //100ms
-  {
-    //dbg_printf("Time spent %i\n",actual_time);
-    usleep(CHUNK_MS*1000 - delta.tv_usec);
-  }
-#endif
 }
 

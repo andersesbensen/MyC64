@@ -37,43 +37,47 @@ extern "C" {
 QMutex pix_buf_lock;
 extern int key_matrix(int keycode);
 
-int16_t audio_buffer[SAMPLE_BUFFER_SIZE];
+class C64 : public QIODevice
+{
+    Q_OBJECT
 
-class C64 : public QThread {
-  Q_OBJECT
 public:
-  void sceeen_draw_done() {
-    emit update();
-  }
-  void audio_ready() {
-    emit update_audio();
-  }
+    C64(void){
+        c64_init();
+    }
 
-  void stop( ) {
-    running = 0;
-    wait();
-  }
+    void start() {  
+      open(QIODevice::ReadOnly); 
+    }
+    void stop() { 
+      close();
+    };
+
+    void sceeen_draw_done() {
+      emit update();
+    }
+
+    qint64 readData(char *data, qint64 maxlen) {
+      int n;
+
+      c65_run_frame();
+      c65_run_frame();
+
+      n = sid_get_data( (uint16_t*)data, maxlen/sizeof(uint16_t));
+      return sizeof(uint16_t)*n;      
+    };
+
+    qint64 writeData(const char *data, qint64 len) { return 0; };
+
+    qint64 bytesAvailable() const {
+      //Corresponding to 20ms
+      return sizeof(uint16_t) * (20 * 15625) / 1000;
+    };
 
 signals:
   void update();
-  void update_audio();
 
-protected:
-  void run() {
-    running = 1;
-    c64_init();
-
-    while(running) {
-      pix_buf_lock.lock();
-      c65_run_frame();
-      pix_buf_lock.unlock();
-    }
-  }
-
-  int running;
 };
-
-
 
 class C64* the_c64;
 
@@ -81,11 +85,7 @@ extern "C" void vic_screen_draw_done() {
   the_c64->sceeen_draw_done();
 }
 
-extern "C" void sid_audio_ready(int16_t* data, int n) {
-  memcpy(audio_buffer,data,n*sizeof(int16_t));
 
-  the_c64->audio_ready();
-}
 
 class Window : public QMainWindow
 {
@@ -101,29 +101,23 @@ class Window : public QMainWindow
     setCentralWidget(label);
     setFocusPolicy(Qt::StrongFocus);
     the_c64 = &c64;
-    c64.start();
     joystick_mode=KEYBOARD;
 
     QAudioFormat format;
 
-    //format.setSampleRate(15625);
-    format.setSampleRate(15625-500);
+    format.setSampleRate(15625);
 
-    //format.setSampleRate(44100);
     format.setChannelCount(1);
     format.setSampleSize(16);
     format.setCodec("audio/pcm");
     format.setByteOrder(QAudioFormat::LittleEndian);
     format.setSampleType(QAudioFormat::SignedInt);
 
-    memset(audio_buffer,0,sizeof(audio_buffer));
     m_audioOutput = new QAudioOutput(format, this);
-    m_audioOutput->setBufferSize(sizeof(audio_buffer)*2);
-    m_audio_buffer = m_audioOutput->start( );
-    m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
-
     connect(&c64, SIGNAL(update()), this, SLOT(update_screen()));
-    connect(&c64, SIGNAL(update_audio()), this, SLOT(play_audio_buffer()));
+    c64.start();
+    m_audioOutput->setBufferSize(1024);
+    m_audioOutput->start(&c64);
 
   }
 
@@ -133,19 +127,10 @@ class Window : public QMainWindow
 
   private slots:
   void update_screen() {
-    //pix_buf_lock.lock();
     QImage screen ((uchar*)pixelbuf,512,312,QImage::Format_RGBA8888);
     label->setPixmap(QPixmap::fromImage(screen));
-    //pix_buf_lock.unlock();
     update();
   }
-
-  void play_audio_buffer() {
-    pix_buf_lock.lock();
-    m_audio_buffer->write(QByteArray((const char*)audio_buffer,sizeof(audio_buffer)));
-    pix_buf_lock.unlock();
-  }
-
 
   protected:
 
@@ -244,7 +229,6 @@ class Window : public QMainWindow
  QLabel *label;
  C64 c64;
  QAudioOutput* m_audioOutput;
- QIODevice* m_audio_buffer;
 
  typedef enum {KEYBOARD,JOY1,JOY2} joystick_mode_t ;
 

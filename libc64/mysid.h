@@ -8,3 +8,5 @@ void sid_init();
 uint8_t sid_read(uint16_t addr) ;
 void sid_write(uint16_t addr, uint8_t val);
 void sid_clock();
+
+int sid_get_data(uint16_t* data, int n);
